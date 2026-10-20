@@ -28,7 +28,8 @@ ASCENT, DESCENT = 800, -200
 STANDARD_WIDTH = 101  # ANSI の線幅 T
 WEIGHTS = {100: 40, 400: STANDARD_WIDTH, 900: 180}  # wght → 線幅
 STYLES = {100: "Thin", 300: "Light", 400: "Regular", 700: "Bold", 900: "Black"}
-ARC_STEPS = 2  # 角の丸め（ベジェ1本）を何本の線分に割るか
+ARC_STEPS = 6  # 角の丸め（ベジェ1本）を何本の線分に割るか（粗いと内側の縁がガタつく）
+CHAMFER_GLYPHS = {"B"}  # 角版で丸めの角を直角にせず面取りする字（B が「日」にならないように）
 MAX_CORNER_TURN = 100  # 曲線の区間がこれ以上（度）回るなら、角版で角を分ける
 K_JOIN = 7  # 頂点の外側の角を表す点の数
 K_CAP = 9  # キャップを表す点の数（両側の縁の点を除く）
@@ -209,7 +210,7 @@ def run_turn(run):
     return math.degrees(total)
 
 
-def corners_for_run(run, line_in=None, line_out=None):
+def corners_for_run(run, line_in=None, line_out=None, chamfer=False):
     """曲線の区間 run を角版での角の列に置き換える。
 
     区間を折れ線にした各点について (角版での位置, 区間の情報) を返す。
@@ -217,6 +218,7 @@ def corners_for_run(run, line_in=None, line_out=None):
     区間の情報は (始点, 始点の接線, 終点, 終点の接線, 半径の目安)。
     line_in, line_out は区間の前後の直線の向き。あればそれを延ばして角を求める
     （曲線の接線は直線の向きとわずかにずれ、角版で直線が傾いてしまう）。
+    chamfer なら直角の角にせず、曲線の始点と終点をまっすぐ結ぶ面取りにする。
     """
     angles = [math.atan2(*tangent_in(run[0])[::-1])]
     for s in run:
@@ -251,14 +253,20 @@ def corners_for_run(run, line_in=None, line_out=None):
         length = sum(math.hypot(*sub(flat_all[i + 1], flat_all[i])) for i in range(len(flat_all) - 1))
         turn = abs(angles[b] - angles[a])
         info = (start, d_in, end, d_out, length / turn if turn > 1e-6 else math.inf)
-        for s in sub_run:
-            for t in range(1, ARC_STEPS + 1):
-                p = bezier(*s, t / ARC_STEPS)
-                result.append((corner if corner else p, info))
+        flat = flat_all[1:]
+        if chamfer:
+            # 曲線上の各点を、弧の長さの割合で始点と終点を結ぶ直線の上に置く
+            along = 0.0
+            for k, p in enumerate(flat):
+                along += math.hypot(*sub(p, flat_all[k]))
+                result.append((add(start, mul(sub(end, start), along / length)), info))
+            continue
+        for p in flat:
+            result.append((corner if corner else p, info))
     return result
 
 
-def polyline(segs, cyc):
+def polyline(segs, cyc, chamfer=False):
     """中心線を折れ線にする。
 
     (丸め版の位置の列, 角版の位置の列, 各頂点の曲線区間の情報) を返す。
@@ -291,9 +299,10 @@ def polyline(segs, cyc):
         line_in = unit(sub(segs[i - 1][3], segs[i - 1][0])) if (i > 0 or cyc) and straight[i - 1] else None
         line_out = unit(sub(segs[j % len(segs)][3], segs[j % len(segs)][0])) \
             if (j < len(segs) or cyc) and straight[j % len(segs)] else None
-        targets = corners_for_run(run, line_in, line_out)
+        targets = corners_for_run(run, line_in, line_out, chamfer)
+        if (i > 0 or cyc) and not chamfer:
+            pts_sharp[-1] = targets[0][0]  # 曲線の始点も最初の角へ（線の端点や面取りなら動かさない）
         if i > 0 or cyc:
-            pts_sharp[-1] = targets[0][0]  # 曲線の始点も最初の角へ（線の端点なら動かさない）
             infos[-1] = targets[0][1]
         if j == len(segs) and not cyc:
             targets[-1] = (flat[-1], targets[-1][1])  # 線の端点は動かさない
@@ -310,9 +319,30 @@ def polyline(segs, cyc):
 
 # ---- 線の輪郭 ------------------------------------------------------------
 
+def trim_cap(side_pt, cap_pts, other_pt, line):
+    """線幅に飲み込まれた短い線の端のキャップを、隣の線の縁 line で切る。
+
+    端の縁の点 side_pt は隣の線の中（line の内側）にある。キャップを side_pt から
+    たどって最初に line を越える所を求め、それより手前の点をその交点にそろえる。
+    丸ペンで描いたときと同じく、隣の線の縁がキャップの円とぶつかる所で角になる。
+    """
+    origin, d = line
+    chain = [side_pt] + list(cap_pts) + [other_pt]
+    side = lambda q: cross(d, sub(q, origin))
+    s0 = side(side_pt)
+    if abs(s0) < 1e-9:
+        return cap_pts
+    for k in range(1, len(chain)):
+        if side(chain[k]) * s0 <= 0:
+            a, b = chain[k - 1], chain[k]
+            x = line_intersection(a, sub(b, a), origin, d) or b
+            return [x if m < k - 1 else q for m, q in enumerate(cap_pts)]
+    return cap_pts
+
+
 class Stroke:
-    def __init__(self, segs, cyc):
-        self.round, self.sharp, self.infos = polyline(segs, cyc)
+    def __init__(self, segs, cyc, chamfer=False):
+        self.round, self.sharp, self.infos = polyline(segs, cyc, chamfer)
         self.cyc = cyc
         self.n = len(self.round)
         self.sharp_points = set()  # 丸め版でも角にする頂点
@@ -482,11 +512,14 @@ class Stroke:
 
         # 先に内側どうしをまとめ、そのあとで端点や外側の点を合わせる
         # （先に端点を動かすと、鋭角で遠くへ飛んだ内側の点に端点が引っぱられる）
+        moved = {}
         for phase in (1, 2):
-            self._clean_pass(lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode, phase)
-        return lists
+            self._clean_pass(lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
+                             phase, moved)
+        return lists, moved
 
-    def _clean_pass(self, lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode, phase):
+    def _clean_pass(self, lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
+                    phase, moved):
         for _ in range(4 * n):
             changed = False
             for j in live:
@@ -531,8 +564,17 @@ class Stroke:
                             lists[i] = [p] * K_JOIN
                 elif i0 in endpoints or (adjustable(i0) and not adjustable(i1)):
                     lists[i0] = [b] * K_JOIN
+                    if i0 in endpoints:
+                        # 端点を寄せた先の点が乗る縁（飲み込まれていない次の線分の縁）を覚えておく
+                        k = next((k for k in live if k > j and k not in swallowed), None)
+                        if k is not None:
+                            moved[i0] = self.edge(k, h, sign, sharp_mode)
                 else:
                     lists[i1] = [a] * K_JOIN
+                    if i1 in endpoints:
+                        k = next((k for k in reversed(live) if k < j and k not in swallowed), None)
+                        if k is not None:
+                            moved[i1] = self.edge(k, h, sign, sharp_mode)
             if not changed:
                 break
 
@@ -546,7 +588,14 @@ class Stroke:
         if sharp_mode and i in self.butt:
             chain = resample([n, mul(n, -1)], K_CAP + 2)
         elif sharp_mode or flagged:
-            chain = resample([n, add(n, d), add(mul(n, -1), d), mul(n, -1)], K_CAP + 2)
+            # 線に直角な長方形の端。斜めの線では延ばす長さを縮め、線の主な向き
+            # （横に近い線なら横、縦に近い線なら縦）で、長方形の角が丸い端と同じ所
+            # （端点から線幅/2）まで届くようにする。
+            # そうしないと斜めの端が張り出し、ROND を下げると字が左右にずれる
+            a = 0 if abs(d[0]) >= abs(d[1]) else 1
+            reach = min(1.0, (1 - abs(n[a])) / abs(d[a]))
+            e = mul(d, reach)
+            chain = resample([n, add(n, e), add(mul(n, -1), e), mul(n, -1)], K_CAP + 2)
         else:
             chain = arc_chain(n, -math.pi, K_CAP + 2)
         return [add(v, mul(p, h)) for p in chain[1:-1]]
@@ -562,20 +611,33 @@ class Stroke:
             for g in self.groups():
                 self.map_group(g, h, sides)
         inner = [x[2] for x in sides]
-        left = self.clean_side([x[0] for x in sides], inner, "L", 1, h, sharp_mode)
-        right = self.clean_side([x[1] for x in sides], inner, "R", -1, h, sharp_mode)
+        orig_ends = {i: (sides[i][0][0], sides[i][1][0]) for i in (0, n - 1)} if not self.cyc else {}
+        left, moved_l = self.clean_side([x[0] for x in sides], inner, "L", 1, h, sharp_mode)
+        right, moved_r = self.clean_side([x[1] for x in sides], inner, "R", -1, h, sharp_mode)
         if self.cyc:
             return [[p for l in left for p in l], [p for r in right for p in r][::-1]]
+        cap_end = self.cap(n - 1, h, sharp_mode)  # 左の縁 → 右の縁
+        cap_start = self.cap(0, h, sharp_mode)  # 右の縁 → 左の縁
+        l0, r0 = orig_ends[0]
+        le, re = orig_ends[n - 1]
+        if 0 in moved_r:
+            cap_start = trim_cap(r0, cap_start, l0, moved_r[0])
+        if 0 in moved_l:
+            cap_start = trim_cap(l0, cap_start[::-1], r0, moved_l[0])[::-1]
+        if n - 1 in moved_l:
+            cap_end = trim_cap(le, cap_end, re, moved_l[n - 1])
+        if n - 1 in moved_r:
+            cap_end = trim_cap(re, cap_end[::-1], le, moved_r[n - 1])[::-1]
         out = [left[0][0]]
         for i in range(1, n - 1):
             out += left[i]
         out.append(left[n - 1][0])
-        out += self.cap(n - 1, h, sharp_mode)
+        out += cap_end
         out.append(right[n - 1][0])
         for i in range(n - 2, 0, -1):
             out += right[i][::-1]
         out.append(right[0][0])
-        out += self.cap(0, h, sharp_mode)
+        out += cap_start
         return [out]
 
 
@@ -732,7 +794,8 @@ def merge_strokes(strokes):
 
 def prepare(g):
     """字形ごとの線を用意し、角の指定と、延ばさないキャップを決める。"""
-    strokes = [Stroke(segs, cyc) for segs, cyc in merge_strokes(g["strokes"])]
+    chamfer = g["name"] in CHAMFER_GLYPHS
+    strokes = [Stroke(segs, cyc, chamfer) for segs, cyc in merge_strokes(g["strokes"])]
     extra_corners = []
     for c in g["corners"]:
         hit = False
@@ -850,6 +913,10 @@ def build_master(glyphs, preps, width, roundness, style):
     cmap = {}
     for g in glyphs:
         # ASCII はソースの文字コードを使う（circumflex, tilde を ^ ~ に割り当てるため）
+        # 代替字形（question.alt など）は文字に割り当てない。
+        # toUnicode は ".alt" を無視するので、そのままだと元の字を上書きしてしまう
+        if "." in g["name"]:
+            continue
         u = chr(g["code"]) if 32 <= g["code"] < 127 else toUnicode(g["name"])
         if len(u) == 1:
             cmap[ord(u)] = g["name"]
@@ -858,7 +925,12 @@ def build_master(glyphs, preps, width, roundness, style):
     empty.numberOfContours = 0
     fb.setupGlyf({".notdef": empty, **{g["name"]: draw_glyph(preps[g["name"]], width, roundness) for g in glyphs}})
     adv = int(round(glyphs[0]["advance"]))
-    fb.setupHorizontalMetrics({n: (adv, 0) for n in order})
+    glyf = fb.font["glyf"]
+    for g in glyf.glyphs.values():
+        g.recalcBounds(glyf)
+    # 左サイドベアリングは輪郭の左端と同じにする。0 のままだと、ROND や wght で
+    # 輪郭の左端が動いたとき、ラスタライザがその分だけ字を横へずらして置いてしまう
+    fb.setupHorizontalMetrics({n: (adv, getattr(glyf[n], "xMin", 0)) for n in order})
     fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT)
     fb.setupNameTable({"familyName": FAMILY, "styleName": style, "copyright": COPYRIGHT,
                        "description": "OCR-A rebuilt from its ANSI X3.17 centerlines with variable stroke width and corner roundness."})

@@ -13,6 +13,7 @@
     --line: #dddad3;
     --accent: #c2410c;
     --cell: #ffffff;
+    --orig: #8a8780;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -23,6 +24,7 @@
       --line: #34332f;
       --accent: #fb923c;
       --cell: #1b1b1a;
+      --orig: #8f8c84;
     }
   }
   * { box-sizing: border-box; }
@@ -75,10 +77,17 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
   .cell {
     background: var(--cell); border: 1px solid var(--line); border-radius: 6px;
-    aspect-ratio: 1 / 1.15;
+    aspect-ratio: 1 / 1.7;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  .cell .g { font-size: 44px; line-height: 1; }
+  .cell .g { font-size: 44px; line-height: 1.1; }
+  .cell .o { font-size: 44px; line-height: 1.1; color: var(--orig); }
+  .orig { font-family: "OCR-A original", monospace; color: var(--orig); }
+  .compare { font-size: var(--size); line-height: 1.15; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .compare .pair { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--ink); }
+  .legend span.o::before { background: var(--orig); }
   .cell .u { font-size: 10px; color: var(--muted); margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
   .matrix { display: grid; gap: 4px 16px; grid-template-columns: auto 1fr; align-items: baseline; }
   .matrix .lab { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
@@ -122,6 +131,12 @@ abcdefghijklmnopqrstuvwxyz
 !"#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~
 £¥ÄÅÆÑÖØÜ⑀⑁⑂│■</div>
     <div class="css" id="css"></div>
+  </section>
+
+  <section>
+    <h2>元の OCR-A と比較</h2>
+    <div class="legend"><span>OCRA Stroke（今の設定）</span><span class="o">元の OCR-A（Tsukurimashou 版 OCRA.ttf）</span></div>
+    <div class="compare" id="compare"></div>
   </section>
 
   <section>
@@ -176,22 +191,55 @@ abcdefghijklmnopqrstuvwxyz
     el.addEventListener("input", () => { if (el !== size) stopAnimation(); apply(); });
   }
 
-  // 全文字
+  // 全文字（上が OCRA Stroke、下が元の OCR-A）
   for (const ch of CHARS) {
     const cell = document.createElement("div");
     cell.className = "cell";
     const g = document.createElement("div");
     g.className = "g";
     g.textContent = ch;
+    const o = document.createElement("div");
+    o.className = "o orig";
+    o.textContent = ch;
     const u = document.createElement("div");
     u.className = "u";
     u.textContent = "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
-    cell.append(g, u);
+    cell.append(g, o, u);
     $("grid").append(cell);
   }
 
+  // 元の OCR-A との比較。サンプルの各行の下に、同じ行を元の OCR-A で並べる
+  function renderCompare() {
+    const box = $("compare");
+    box.textContent = "";
+    for (const line of $("sample").innerText.split("\n")) {
+      if (!line.trim()) continue;
+      const pair = document.createElement("div");
+      pair.className = "pair";
+      const a = document.createElement("div");
+      a.className = "ocra";
+      a.textContent = line;
+      const b = document.createElement("div");
+      b.className = "orig";
+      b.textContent = line;
+      pair.append(a, b);
+      box.append(pair);
+    }
+  }
+  $("sample").addEventListener("input", renderCompare);
+  renderCompare();
+
   // 太さ × 角の丸み（スライダーとは独立した固定の比較）
   const MATRIX_TEXT = "ABC 0123 abc @&$";
+  {
+    const lab = document.createElement("div");
+    lab.className = "lab";
+    lab.textContent = "元の OCR-A";
+    const row = document.createElement("div");
+    row.className = "row orig";
+    row.textContent = MATRIX_TEXT;
+    $("matrix").append(lab, row);
+  }
   for (const r of [100, 50, 0]) {
     for (const w of [100, 400, 900]) {
       const lab = document.createElement("div");
@@ -231,6 +279,9 @@ abcdefghijklmnopqrstuvwxyz
   // フォントを読み込む。作り直したフォントがキャッシュで隠れないよう、毎回 URL を変える
   const face = new FontFace("OCRA Stroke VF", `url("dist/OCRAStroke-VF.ttf?t=${Date.now()}")`, { weight: "100 900" });
   document.fonts.add(face);
+  const origFace = new FontFace("OCR-A original", 'url("ref/OCRA.ttf")');
+  document.fonts.add(origFace);
+  origFace.load();
   face.load().then(() => {
     $("status").textContent = "";
   }).catch(() => {
