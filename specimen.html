@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCRA Stroke</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --panel: #ffffff;
+    --ink: #1b1b1a;
+    --muted: #6d6b66;
+    --line: #dddad3;
+    --accent: #c2410c;
+    --cell: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615;
+      --panel: #1f1f1d;
+      --ink: #ecebe6;
+      --muted: #9a978f;
+      --line: #34332f;
+      --accent: #fb923c;
+      --cell: #1b1b1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+  }
+  .ocra {
+    font-family: "OCRA Stroke VF", monospace;
+    font-variation-settings: "wght" var(--wght), "ROND" var(--rond);
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px;
+    display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  .ctrl { display: grid; grid-template-columns: auto 180px 3.5em; gap: 8px; align-items: center; }
+  .ctrl label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .ctrl output { font-variant-numeric: tabular-nums; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+  button {
+    font: inherit; font-size: 12px;
+    padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  main { padding: 20px 16px 60px; max-width: 1200px; margin: 0 auto; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
+  .sample {
+    font-size: var(--size);
+    line-height: 1.25;
+    outline: none;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    min-height: 1.4em;
+  }
+  .css { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); margin-top: 8px; user-select: all; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+  .cell {
+    background: var(--cell); border: 1px solid var(--line); border-radius: 6px;
+    aspect-ratio: 1 / 1.15;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .cell .g { font-size: 44px; line-height: 1; }
+  .cell .u { font-size: 10px; color: var(--muted); margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+  .matrix { display: grid; gap: 4px 16px; grid-template-columns: auto 1fr; align-items: baseline; }
+  .matrix .lab { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  .matrix .row { font-size: 34px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  .note { color: var(--muted); font-size: 12px; }
+  .error { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>OCRA Stroke</h1>
+  <div class="ctrl">
+    <label for="wght">wght</label>
+    <input id="wght" type="range" min="100" max="900" step="1" value="400">
+    <output id="wght-out">400</output>
+  </div>
+  <div class="ctrl">
+    <label for="rond">ROND</label>
+    <input id="rond" type="range" min="0" max="100" step="1" value="100">
+    <output id="rond-out">100</output>
+  </div>
+  <div class="ctrl">
+    <label for="size">サイズ</label>
+    <input id="size" type="range" min="16" max="240" step="1" value="72">
+    <output id="size-out">72</output>
+  </div>
+  <div class="buttons" id="instances"></div>
+  <div class="buttons">
+    <button id="animate" aria-pressed="false">アニメーション</button>
+  </div>
+</header>
+
+<main>
+  <p id="status" class="note"></p>
+
+  <section>
+    <h2>サンプル（クリックして編集）</h2>
+    <div class="sample ocra" id="sample" contenteditable="true" spellcheck="false">0123456789 ISBN 978-4-00-000000-0
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+!"#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~
+£¥ÄÅÆÑÖØÜ⑀⑁⑂│■</div>
+    <div class="css" id="css"></div>
+  </section>
+
+  <section>
+    <h2>太さ × 角の丸み</h2>
+    <div class="matrix" id="matrix"></div>
+  </section>
+
+  <section>
+    <h2>全文字</h2>
+    <div class="grid ocra" id="grid"></div>
+  </section>
+</main>
+
+<script>
+  const CHARS = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~£¥ÄÅÆÑÖØÜ⑀⑁⑂│■";
+  const INSTANCES = [
+    ["Thin", 100, 100], ["Regular", 400, 100], ["Black", 900, 100],
+    ["Sharp Thin", 100, 0], ["Sharp", 400, 0], ["Sharp Black", 900, 0],
+  ];
+  const root = document.documentElement;
+  const $ = (id) => document.getElementById(id);
+  const wght = $("wght"), rond = $("rond"), size = $("size");
+
+  function apply() {
+    root.style.setProperty("--wght", wght.value);
+    root.style.setProperty("--rond", rond.value);
+    root.style.setProperty("--size", size.value + "px");
+    $("wght-out").textContent = wght.value;
+    $("rond-out").textContent = rond.value;
+    $("size-out").textContent = size.value;
+    $("css").textContent = `font-variation-settings: "wght" ${wght.value}, "ROND" ${rond.value};`;
+    for (const b of $("instances").children) {
+      b.setAttribute("aria-pressed", String(+b.dataset.w === +wght.value && +b.dataset.r === +rond.value));
+    }
+  }
+
+  function set(w, r) {
+    wght.value = w;
+    rond.value = r;
+    apply();
+  }
+
+  for (const [name, w, r] of INSTANCES) {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.dataset.w = w;
+    b.dataset.r = r;
+    b.addEventListener("click", () => { stopAnimation(); set(w, r); });
+    $("instances").append(b);
+  }
+  for (const el of [wght, rond, size]) {
+    el.addEventListener("input", () => { if (el !== size) stopAnimation(); apply(); });
+  }
+
+  // 全文字
+  for (const ch of CHARS) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const g = document.createElement("div");
+    g.className = "g";
+    g.textContent = ch;
+    const u = document.createElement("div");
+    u.className = "u";
+    u.textContent = "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+    cell.append(g, u);
+    $("grid").append(cell);
+  }
+
+  // 太さ × 角の丸み（スライダーとは独立した固定の比較）
+  const MATRIX_TEXT = "ABC 0123 abc @&$";
+  for (const r of [100, 50, 0]) {
+    for (const w of [100, 400, 900]) {
+      const lab = document.createElement("div");
+      lab.className = "lab";
+      lab.textContent = `wght ${w} / ROND ${r}`;
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.fontFamily = '"OCRA Stroke VF", monospace';
+      row.style.fontVariationSettings = `"wght" ${w}, "ROND" ${r}`;
+      row.textContent = MATRIX_TEXT;
+      $("matrix").append(lab, row);
+    }
+  }
+
+  // アニメーション（wght と ROND を周期をずらして往復させる）
+  let raf = null;
+  function stopAnimation() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    $("animate").setAttribute("aria-pressed", "false");
+  }
+  $("animate").addEventListener("click", () => {
+    if (raf) { stopAnimation(); return; }
+    $("animate").setAttribute("aria-pressed", "true");
+    const t0 = performance.now();
+    const tick = (t) => {
+      const s = (t - t0) / 1000;
+      wght.value = Math.round(500 - 400 * Math.cos(s * 0.9));
+      rond.value = Math.round(50 + 50 * Math.cos(s * 0.37));
+      apply();
+      $("animate").setAttribute("aria-pressed", "true");
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  });
+
+  // フォントを読み込む。作り直したフォントがキャッシュで隠れないよう、毎回 URL を変える
+  const face = new FontFace("OCRA Stroke VF", `url("dist/OCRAStroke-VF.ttf?t=${Date.now()}")`, { weight: "100 900" });
+  document.fonts.add(face);
+  face.load().then(() => {
+    $("status").textContent = "";
+  }).catch(() => {
+    $("status").innerHTML = '<span class="error">フォントを読み込めませんでした。</span> ocra フォルダで <code>python3 -m http.server</code> を実行し、http://localhost:8000/specimen.html を開いてください。';
+  });
+
+  apply();
+</script>
+</body>
+</html>
