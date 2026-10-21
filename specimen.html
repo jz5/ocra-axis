@@ -14,6 +14,7 @@
     --accent: #c2410c;
     --cell: #ffffff;
     --orig: #8a8780;
+    --ghost: rgba(194, 65, 12, .45);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,6 +26,7 @@
       --accent: #fb923c;
       --cell: #1b1b1a;
       --orig: #8f8c84;
+      --ghost: rgba(251, 146, 60, .5);
     }
   }
   * { box-sizing: border-box; }
@@ -34,99 +36,125 @@
     color: var(--ink);
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
   }
-  .ocra {
-    font-family: "OCR-A Axis VF", monospace;
-    font-variation-settings: "wght" var(--wght), "ROND" var(--rond), "slnt" var(--slnt);
-  }
+  .ocra { font-family: var(--face), monospace; font-variation-settings: var(--fvs); }
+  .orig { font-family: "OCR-A original", monospace; color: var(--orig); }
+
+  /* ---- ヘッダー（操作） ---- */
   header {
-    position: sticky; top: 0; z-index: 10;
     background: var(--panel);
     border-bottom: 1px solid var(--line);
-    padding: 12px 16px;
-    display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center;
+    padding: 10px 16px 12px;
+    display: grid; gap: 10px;
   }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .02em; }
-  .ctrl { display: grid; grid-template-columns: auto 180px 3.5em; gap: 8px; align-items: center; }
-  .ctrl label { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .ctrl output { font-variant-numeric: tabular-nums; text-align: right; }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
-  .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+  @media (min-width: 800px) { header { position: sticky; top: 0; z-index: 10; } }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #current { font-weight: 600; }
+  #current .mid { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .group > .name { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
   button {
-    font: inherit; font-size: 12px;
-    padding: 4px 10px; border-radius: 6px;
+    font: inherit; font-size: 12px; line-height: 1.3;
+    padding: 5px 10px; border-radius: 6px;
     border: 1px solid var(--line); background: var(--bg); color: var(--ink);
     cursor: pointer;
   }
-  button:hover { border-color: var(--accent); }
-  button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { background: var(--line); }
+  button[aria-pressed=true] { background: var(--accent); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  button .n { display: block; font-size: 10px; opacity: .7; font-variant-numeric: tabular-nums; }
+  .ctrl { display: grid; grid-template-columns: auto minmax(90px, 150px) 2.6em; gap: 8px; align-items: center; }
+  .ctrl label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .ctrl output { font-variant-numeric: tabular-nums; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); user-select: all; overflow-wrap: anywhere; }
+
+  /* ---- 本文 ---- */
   main { padding: 20px 16px 60px; max-width: 1200px; margin: 0 auto; }
-  section { margin-bottom: 36px; }
-  h2 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  .note { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  .error { color: var(--accent); }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin: 8px 0 10px; }
+
+  /* 比較：data-compare が none / side / overlay */
+  .stack { display: grid; }
+  body[data-compare=overlay] .stack > * { grid-area: 1 / 1; }
+  body[data-compare=none] .stack > .orig,
+  body:not([data-compare=overlay]) .stack > .ghost { display: none; }
+  body[data-compare=overlay] .stack > .orig { color: var(--ghost); pointer-events: none; }
+  body:not([data-compare=side]) #pairs { display: none; }
+
   .sample {
-    font-size: var(--size);
-    line-height: 1.25;
-    outline: none;
-    padding: 12px 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
-    min-height: 1.4em;
+    font-size: var(--size); line-height: 1.25;
+    padding: 12px 0; margin: 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.4em; outline: none;
   }
-  .css { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); margin-top: 8px; user-select: all; }
+  .sample.ghost { border-color: transparent; }
+  #pairs { font-size: var(--size); line-height: 1.2; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 12px; }
+  #pairs .pair { padding: 6px 0; border-bottom: 1px solid var(--line); }
+
+  /* 生成されるスタイル */
+  .scroll { overflow-x: auto; }
+  table.styles { border-collapse: separate; border-spacing: 4px; width: 100%; min-width: 640px; }
+  .styles th { font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; padding: 0 6px; white-space: nowrap; }
+  .styles th.w { width: 7.5em; }
+  .styles th.w .n { display: block; font-weight: 400; font-size: 11px; }
+  .styles td { padding: 0; }
+  .styles button {
+    width: 100%; text-align: left; padding: 4px 10px;
+    background: var(--cell); font-size: 26px; line-height: 1.3; white-space: nowrap; overflow: hidden;
+  }
+  .styles button:hover { background: var(--bg); }
+  .styles button[aria-pressed=true] { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--cell); color: var(--ink); }
+
+  /* 代替字形 */
+  .alts { display: grid; grid-template-columns: auto repeat(4, minmax(56px, 72px)) 1fr; gap: 6px 10px; align-items: center; }
+  .alts .h { font-size: 11px; color: var(--muted); text-align: center; }
+  .alts .h.left { text-align: left; }
+  .alts .g { font-size: 52px; line-height: 1.15; text-align: center; background: var(--cell); border: 1px solid var(--line); border-radius: 6px; }
+  .alts .tag { font-size: 13px; white-space: nowrap; }
+  .alts .why { font-size: 12px; color: var(--muted); }
+  @media (max-width: 640px) { .alts { grid-template-columns: auto repeat(4, 1fr); } .alts .why, .alts .h.why-h { display: none; } }
+
+  /* 全文字 */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
   .cell {
     background: var(--cell); border: 1px solid var(--line); border-radius: 6px;
-    aspect-ratio: 1 / 1.7;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 8px 0 6px; display: flex; flex-direction: column; align-items: center;
   }
-  .cell .g { font-size: 44px; line-height: 1.1; }
-  .cell .o { font-size: 44px; line-height: 1.1; color: var(--orig); }
-  .orig { font-family: "OCR-A original", monospace; color: var(--orig); }
-  .compare { font-size: var(--size); line-height: 1.15; overflow-wrap: anywhere; white-space: pre-wrap; }
-  .compare .pair { padding: 6px 0; border-bottom: 1px solid var(--line); }
-  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--ink); }
-  .legend span.o::before { background: var(--orig); }
-  .cell .u { font-size: 10px; color: var(--muted); margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
-  .matrix { display: grid; gap: 4px 16px; grid-template-columns: auto 1fr; align-items: baseline; }
-  .matrix .lab { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
-  .matrix .row { font-size: 34px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-  .alts { display: grid; grid-template-columns: auto auto repeat(4, minmax(64px, 1fr)); gap: 6px 14px; align-items: center; }
-  .alts .h { font-size: 11px; color: var(--muted); }
-  .alts .g { font-size: 56px; line-height: 1.15; text-align: center; background: var(--cell); border: 1px solid var(--line); border-radius: 6px; }
-  .alts .why { font-size: 12px; color: var(--muted); max-width: 26em; }
-  .alts label { font-size: 13px; white-space: nowrap; cursor: pointer; }
-  .note { color: var(--muted); font-size: 12px; }
-  .error { color: var(--accent); }
+  .cell .stack { justify-items: center; font-size: 44px; line-height: 1.15; }
+  .cell .u { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: ui-monospace, Menlo, monospace; }
 </style>
 </head>
-<body>
+<body data-compare="none">
 <header>
-  <h1>OCR-A Axis</h1>
-  <div class="ctrl">
-    <label for="wght">wght</label>
-    <input id="wght" type="range" min="100" max="900" step="1" value="400">
-    <output id="wght-out">400</output>
-  </div>
-  <div class="ctrl">
-    <label for="rond">ROND</label>
-    <input id="rond" type="range" min="0" max="100" step="1" value="100">
-    <output id="rond-out">100</output>
-  </div>
-  <div class="ctrl">
-    <label for="slnt">slnt</label>
-    <input id="slnt" type="range" min="-10" max="0" step="0.5" value="0">
-    <output id="slnt-out">0</output>
-  </div>
-  <div class="ctrl">
-    <label for="size">サイズ</label>
-    <input id="size" type="range" min="16" max="240" step="1" value="72">
-    <output id="size-out">72</output>
-  </div>
-  <div class="buttons" id="instances"></div>
-  <div class="buttons">
+  <div class="row">
+    <h1>OCR-A Axis</h1>
+    <span id="current"></span>
+    <span class="spacer"></span>
+    <div class="group">
+      <span class="name">表示に使うフォント</span>
+      <div class="seg" id="source"></div>
+    </div>
     <button id="animate" aria-pressed="false">アニメーション</button>
+  </div>
+  <div class="row">
+    <div class="group"><span class="name">ファミリー</span><div class="seg" id="families"></div></div>
+    <div class="group"><span class="name">太さ</span><div class="seg" id="weights"></div></div>
+    <div class="group"><span class="name">傾き</span><div class="seg" id="slants"></div></div>
+  </div>
+  <div class="row">
+    <div class="ctrl"><label for="wght">wght</label><input id="wght" type="range" min="100" max="900" step="1" value="400"><output id="wght-out"></output></div>
+    <div class="ctrl"><label for="rond">ROND</label><input id="rond" type="range" min="0" max="100" step="1" value="100"><output id="rond-out"></output></div>
+    <div class="ctrl"><label for="slnt">slnt</label><input id="slnt" type="range" min="-10" max="0" step="0.5" value="0"><output id="slnt-out"></output></div>
+    <div class="ctrl"><label for="size">サイズ</label><input id="size" type="range" min="16" max="240" step="1" value="72"><output id="size-out"></output></div>
+    <span class="code" id="css"></span>
   </div>
 </header>
 
@@ -134,120 +162,50 @@
   <p id="status" class="note"></p>
 
   <section>
-    <h2>サンプル（クリックして編集）</h2>
-    <div class="sample ocra" id="sample" contenteditable="true" spellcheck="false">0123456789 ISBN 978-4-00-000000-0
+    <h2>サンプル</h2>
+    <p class="note">クリックすると文字を書き換えられます。</p>
+    <div class="tools">
+      <div class="group"><span class="name">元のOCR-Aと比較</span><div class="seg" id="compare"></div></div>
+      <div class="group"><span class="name">代替字形</span><div class="seg" id="features"></div></div>
+    </div>
+    <div class="stack">
+      <div class="sample ocra" id="sample" contenteditable="plaintext-only" spellcheck="false">0123456789
 ABCDEFGHIJKLMNOPQRSTUVWXYZ
 abcdefghijklmnopqrstuvwxyz
 !"#$%&amp;'()*+,-./:;&lt;=&gt;?@[\]^_`{|}~
 £¥ÄÅÆÑÖØÜ⑀⑁⑂│■</div>
-    <div class="css" id="css"></div>
+      <div class="sample orig ghost" id="ghost" aria-hidden="true"></div>
+    </div>
+    <div id="pairs"></div>
   </section>
 
   <section>
-    <h2>元の OCR-A と比較</h2>
-    <div class="legend"><span>OCR-A Axis（今の設定）</span><span class="o">元の OCR-A（Tsukurimashou 版 OCRA.ttf）</span></div>
-    <div class="compare" id="compare"></div>
+    <h2>生成されるスタイル（36）</h2>
+    <p class="note">dist/static/に書き出す静的フォントの組み合わせです。クリックするとそのスタイルに切り替わります。中間の値はスライダーで見られます。</p>
+    <div class="scroll"><table class="styles" id="styles"></table></div>
   </section>
 
   <section>
-    <h2>代替字形（OpenType の ss01〜ss05）</h2>
-    <p class="note">元の OCR-A に入っている代わりの形です。チェックを入れると、サンプルと比較の欄でもその代替字形に切り替わります。</p>
+    <h2>代替字形（ss01〜ss05）</h2>
+    <p class="note">元のOCR-Aに入っている代わりの形です。サンプルでも、上の「代替字形」のボタンで切り替えられます。</p>
     <div class="alts" id="alts"></div>
   </section>
 
   <section>
-    <h2>太さ × 角の丸み</h2>
-    <div class="matrix" id="matrix"></div>
-  </section>
-
-  <section>
     <h2>全文字</h2>
-    <div class="grid ocra" id="grid"></div>
+    <p class="note">「元のOCR-Aと比較」の設定に合わせて、元の字も表示します。</p>
+    <div class="grid" id="grid"></div>
   </section>
 </main>
 
 <script>
   const CHARS = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~£¥ÄÅÆÑÖØÜ⑀⑁⑂│■";
-  const INSTANCES = [
-    ["Thin", 100, 100], ["Regular", 400, 100], ["Black", 900, 100],
-    ["Sharp Thin", 100, 0], ["Sharp", 400, 0], ["Sharp Black", 900, 0],
-  ];
-  const root = document.documentElement;
-  const $ = (id) => document.getElementById(id);
-  const wght = $("wght"), rond = $("rond"), slnt = $("slnt"), size = $("size");
-
-  function apply() {
-    root.style.setProperty("--wght", wght.value);
-    root.style.setProperty("--rond", rond.value);
-    root.style.setProperty("--slnt", slnt.value);
-    $("slnt-out").textContent = slnt.value;
-    root.style.setProperty("--size", size.value + "px");
-    $("wght-out").textContent = wght.value;
-    $("rond-out").textContent = rond.value;
-    $("size-out").textContent = size.value;
-    $("css").textContent = `font-variation-settings: "wght" ${wght.value}, "ROND" ${rond.value}, "slnt" ${slnt.value};`;
-    for (const b of $("instances").children) {
-      b.setAttribute("aria-pressed", String(+b.dataset.w === +wght.value && +b.dataset.r === +rond.value));
-    }
-  }
-
-  function set(w, r) {
-    wght.value = w;
-    rond.value = r;
-    apply();
-  }
-
-  for (const [name, w, r] of INSTANCES) {
-    const b = document.createElement("button");
-    b.textContent = name;
-    b.dataset.w = w;
-    b.dataset.r = r;
-    b.addEventListener("click", () => { stopAnimation(); set(w, r); });
-    $("instances").append(b);
-  }
-  for (const el of [wght, rond, slnt, size]) {
-    el.addEventListener("input", () => { if (el !== size) stopAnimation(); apply(); });
-  }
-
-  // 全文字（上が OCR-A Axis、下が元の OCR-A）
-  for (const ch of CHARS) {
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    const g = document.createElement("div");
-    g.className = "g";
-    g.textContent = ch;
-    const o = document.createElement("div");
-    o.className = "o orig";
-    o.textContent = ch;
-    const u = document.createElement("div");
-    u.className = "u";
-    u.textContent = "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
-    cell.append(g, o, u);
-    $("grid").append(cell);
-  }
-
-  // 元の OCR-A との比較。サンプルの各行の下に、同じ行を元の OCR-A で並べる
-  function renderCompare() {
-    const box = $("compare");
-    box.textContent = "";
-    for (const line of $("sample").innerText.split("\n")) {
-      if (!line.trim()) continue;
-      const pair = document.createElement("div");
-      pair.className = "pair";
-      const a = document.createElement("div");
-      a.className = "ocra";
-      a.textContent = line;
-      const b = document.createElement("div");
-      b.className = "orig";
-      b.textContent = line;
-      pair.append(a, b);
-      box.append(pair);
-    }
-  }
-  $("sample").addEventListener("input", renderCompare);
-  renderCompare();
-
-  // 代替字形。標準と代替を、今のフォントと元の OCR-A で並べる
+  // fontinfo.py と同じ組み合わせと名前
+  const WEIGHTS = [[100, "Thin"], [200, "ExtraLight"], [300, "Light"], [400, "Regular"], [500, "Medium"],
+                   [600, "SemiBold"], [700, "Bold"], [800, "ExtraBold"], [900, "Black"]];
+  const FAMILIES = [[100, "Round", "OCR-A Axis", "OCRAAxis"], [0, "Sharp", "OCR-A Axis Sharp", "OCRAAxisSharp"]];
+  const SLANT = -10;
+  const SLANTS = [[0, "立体"], [SLANT, "Oblique"]];
   const ALTS = [
     ["ss01", ".", "ピリオド", "標準の形だと、一部のプリンターで紙に穴があくため"],
     ["ss02", "?", "疑問符", "下の小さな点が、エンボス加工のカードなどで作りにくく、紙に穴もあくため"],
@@ -255,101 +213,246 @@ abcdefghijklmnopqrstuvwxyz
     ["ss04", ",", "カンマ", "標準の形だと、一部のプリンターで紙に穴があくため"],
     ["ss05", "-", "ハイフン", "古い版の形"],
   ];
-  const enabled = new Set();
-  function applyFeatures() {
-    const value = enabled.size ? [...enabled].map((t) => `"${t}" 1`).join(", ") : "normal";
-    for (const id of ["sample", "compare"]) $(id).style.fontFeatureSettings = value;
+  const STYLE_TEXT = "Aa@$ 0123";
+
+  const root = document.documentElement;
+  const $ = (id) => document.getElementById(id);
+  const wght = $("wght"), rond = $("rond"), slnt = $("slnt"), size = $("size");
+  let source = "vf";  // "vf"（バリアブルフォント）か "static"（dist/static の静的フォント）
+  const features = new Set();
+
+  function pressed(button, on) {
+    button.setAttribute("aria-pressed", String(on));
   }
-  {
-    const box = $("alts");
-    for (const text of ["", "", "標準", "代替", "元の標準", "元の代替"]) {
-      const h = document.createElement("div");
-      h.className = "h";
-      h.textContent = text;
-      box.append(h);
+
+  function el(tag, props = {}, ...children) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "data") Object.assign(e.dataset, v);
+      else if (k in e) e[k] = v;
+      else e.setAttribute(k, v);
     }
-    for (const [tag, ch, name, why] of ALTS) {
-      const label = document.createElement("label");
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.addEventListener("change", () => {
-        check.checked ? enabled.add(tag) : enabled.delete(tag);
-        applyFeatures();
-      });
-      label.append(check, ` ${tag} ${name}`);
-      const note = document.createElement("div");
-      note.className = "why";
-      note.textContent = why;
-      box.append(label, note);
-      for (const [cls, feat] of [["ocra", null], ["ocra", tag], ["orig", null], ["orig", tag]]) {
-        const g = document.createElement("div");
-        g.className = "g " + cls;
-        g.textContent = ch;
-        if (feat) g.style.fontFeatureSettings = `"${feat}" 1`;
-        box.append(g);
-      }
+    e.append(...children);
+    return e;
+  }
+
+  // ---- フォント ----
+
+  // 元のOCR-Aは行の上下の幅が違うので、上下の幅を OCR-A Axis（800／200）にそろえて、重ねたときに基準線を合わせる
+  const METRICS = { ascentOverride: "80%", descentOverride: "20%", lineGapOverride: "0%" };
+  const bust = `?t=${Date.now()}`;  // 作り直したフォントがキャッシュで隠れないよう、毎回 URL を変える
+  const vfFace = new FontFace("OCR-A Axis VF", `url("dist/OCRAAxis-VF.ttf${bust}")`, { weight: "100 900", ...METRICS });
+  const origFace = new FontFace("OCR-A original", 'url("ref/OCRA.ttf")', METRICS);
+  document.fonts.add(vfFace);
+  document.fonts.add(origFace);
+  const staticFaces = new Map();
+
+  function psName(w, r, s) {
+    const fam = FAMILIES.find(([v]) => v === r)[3];
+    const wname = WEIGHTS.find(([v]) => v === w)[1];
+    const style = s === 0 ? wname : (wname === "Regular" ? "Oblique" : `${wname}Oblique`);
+    return `${fam}-${style}`;
+  }
+
+  function staticFamily(ps) {
+    if (!staticFaces.has(ps)) {
+      const face = new FontFace(`S ${ps}`, `url("dist/static/${ps}.ttf${bust}")`, METRICS);
+      document.fonts.add(face);
+      face.load().catch(() => showError(`dist/static/${ps}.ttf を読み込めませんでした。make_release.pyで書き出してください。`));
+      staticFaces.set(ps, face);
+    }
+    return `"S ${ps}"`;
+  }
+
+  // 太さ・丸み・傾きに対応する font-family と font-variation-settings
+  function fontFor(w, r, s) {
+    if (source === "static") return { face: staticFamily(psName(w, r, s)), fvs: "normal" };
+    return { face: '"OCR-A Axis VF"', fvs: `"wght" ${w}, "ROND" ${r}, "slnt" ${s}` };
+  }
+
+  function showError(text) {
+    $("status").replaceChildren(el("span", { className: "error", textContent: text }));
+  }
+
+  // ---- 操作 ----
+
+  // 静的フォントでは、生成される組み合わせにしか合わせられない
+  function snap() {
+    if (source !== "static") return;
+    wght.value = Math.min(900, Math.max(100, Math.round(wght.value / 100) * 100));
+    rond.value = +rond.value >= 50 ? 100 : 0;
+    slnt.value = +slnt.value <= SLANT / 2 ? SLANT : 0;
+  }
+
+  function current() {
+    return { w: +wght.value, r: +rond.value, s: +slnt.value };
+  }
+
+  function isNamed({ w, r, s }) {
+    return w % 100 === 0 && (r === 0 || r === 100) && (s === 0 || s === SLANT);
+  }
+
+  function styleLabel({ w, r, s }) {
+    const fam = FAMILIES.find(([v]) => v === r)[2];
+    const wname = WEIGHTS.find(([v]) => v === w)[1];
+    const style = s === 0 ? wname : (wname === "Regular" ? "Oblique" : `${wname} Oblique`);
+    return `${fam} ${style}`;
+  }
+
+  function apply() {
+    snap();
+    const cur = current();
+    const { face, fvs } = fontFor(cur.w, cur.r, cur.s);
+    root.style.setProperty("--face", face);
+    root.style.setProperty("--fvs", fvs);
+    root.style.setProperty("--size", size.value + "px");
+    for (const k of ["wght", "rond", "slnt", "size"]) $(`${k}-out`).textContent = $(k).value;
+
+    if (isNamed(cur)) {
+      $("current").replaceChildren(styleLabel(cur));
+    } else {
+      $("current").replaceChildren(el("span", { className: "mid", textContent: "中間の値（静的フォントにはない組み合わせ）" }));
+    }
+    $("css").textContent = source === "static"
+      ? `dist/static/${psName(cur.w, cur.r, cur.s)}.ttf`
+      : `font-variation-settings: ${fvs};`;
+
+    for (const b of $("families").children) pressed(b, +b.dataset.v === cur.r);
+    for (const b of $("weights").children) pressed(b, +b.dataset.v === cur.w);
+    for (const b of $("slants").children) pressed(b, +b.dataset.v === cur.s);
+    for (const b of $("styles").querySelectorAll("button")) {
+      pressed(b, +b.dataset.w === cur.w && +b.dataset.r === cur.r && +b.dataset.s === cur.s);
     }
   }
 
-  // 太さ × 角の丸み（スライダーとは独立した固定の比較）
-  const MATRIX_TEXT = "ABC 0123 abc @&$";
-  {
-    const lab = document.createElement("div");
-    lab.className = "lab";
-    lab.textContent = "元の OCR-A";
-    const row = document.createElement("div");
-    row.className = "row orig";
-    row.textContent = MATRIX_TEXT;
-    $("matrix").append(lab, row);
+  function set(values) {
+    stopAnimation();
+    if ("w" in values) wght.value = values.w;
+    if ("r" in values) rond.value = values.r;
+    if ("s" in values) slnt.value = values.s;
+    apply();
   }
-  for (const r of [100, 50, 0]) {
-    for (const w of [100, 400, 900]) {
-      const lab = document.createElement("div");
-      lab.className = "lab";
-      lab.textContent = `wght ${w} / ROND ${r}`;
-      const row = document.createElement("div");
-      row.className = "row";
-      row.style.fontFamily = '"OCR-A Axis VF", monospace';
-      row.style.fontVariationSettings = `"wght" ${w}, "ROND" ${r}`;
-      row.textContent = MATRIX_TEXT;
-      $("matrix").append(lab, row);
+
+  function segment(box, items, onClick) {
+    for (const [value, label, sub] of items) {
+      const b = el("button", { data: { v: value }, "aria-pressed": "false" }, label);
+      if (sub !== undefined) b.append(el("span", { className: "n", textContent: sub }));
+      b.addEventListener("click", () => onClick(value, b));
+      box.append(b);
     }
   }
 
-  // アニメーション（wght と ROND を周期をずらして往復させる）
+  segment($("families"), FAMILIES.map(([v, name]) => [v, name]), (v) => set({ r: v }));
+  segment($("weights"), WEIGHTS.map(([v, name]) => [v, name, v]), (v) => set({ w: v }));
+  segment($("slants"), SLANTS, (v) => set({ s: v }));
+  for (const input of [wght, rond, slnt]) input.addEventListener("input", () => { stopAnimation(); apply(); });
+  size.addEventListener("input", apply);
+
+  segment($("source"), [["vf", "バリアブル"], ["static", "静的フォント"]], (v) => {
+    source = v;
+    for (const b of $("source").children) pressed(b, b.dataset.v === v);
+    stopAnimation();
+    $("animate").disabled = v === "static";
+    // 静的フォントでは、スライダーを生成される組み合わせの刻みで動かす
+    wght.step = v === "static" ? 100 : 1;
+    rond.step = v === "static" ? 100 : 1;
+    slnt.step = v === "static" ? 10 : 0.5;
+    renderStyles();
+    apply();
+  });
+  pressed($("source").children[0], true);
+
+  // ---- サンプルと比較 ----
+
+  segment($("compare"), [["none", "なし"], ["side", "並べる"], ["overlay", "重ねる"]], (v) => {
+    document.body.dataset.compare = v;
+    for (const b of $("compare").children) pressed(b, b.dataset.v === v);
+  });
+  pressed($("compare").children[0], true);
+
+  function syncSample() {
+    const text = $("sample").innerText;
+    $("ghost").textContent = text;
+    $("pairs").replaceChildren(...text.split("\n").filter((line) => line.trim()).map((line) =>
+      el("div", { className: "pair" }, el("div", { className: "ocra", textContent: line }), el("div", { className: "orig", textContent: line }))));
+  }
+  $("sample").addEventListener("input", syncSample);
+  syncSample();
+
+  segment($("features"), ALTS.map(([tag, ch]) => [tag, `${tag} ${ch}`]), (tag, b) => {
+    features.has(tag) ? features.delete(tag) : features.add(tag);
+    pressed(b, features.has(tag));
+    const value = features.size ? [...features].map((t) => `"${t}" 1`).join(", ") : "normal";
+    for (const id of ["sample", "ghost", "pairs"]) $(id).style.fontFeatureSettings = value;
+  });
+
+  // ---- 生成されるスタイル（9ウェイト×ファミリー×立体／Oblique） ----
+
+  const COLUMNS = FAMILIES.flatMap(([r, name]) => SLANTS.map(([s]) => [r, s, s === 0 ? name : `${name} Oblique`]));
+  function renderStyles() {
+    const head = el("tr", {}, el("th", { className: "w" }), ...COLUMNS.map(([, , label]) => el("th", { textContent: label })));
+    const rows = WEIGHTS.map(([w, wname]) => el("tr", {},
+      el("th", { className: "w" }, wname, el("span", { className: "n", textContent: w })),
+      ...COLUMNS.map(([r, s]) => {
+        const { face, fvs } = fontFor(w, r, s);
+        const b = el("button", { data: { w, r, s }, title: styleLabel({ w, r, s }), textContent: STYLE_TEXT });
+        b.style.fontFamily = `${face}, monospace`;
+        b.style.fontVariationSettings = fvs;
+        b.addEventListener("click", () => set({ w, r, s }));
+        return el("td", {}, b);
+      })));
+    $("styles").replaceChildren(el("thead", {}, head), el("tbody", {}, ...rows));
+  }
+  renderStyles();
+
+  // ---- 代替字形（標準と代替を、OCR-A Axisと元のOCR-Aで並べる） ----
+
+  $("alts").append(el("div", { className: "h" }),
+    ...["標準", "代替", "元の標準", "元の代替"].map((t) => el("div", { className: "h", textContent: t })),
+    el("div", { className: "h left why-h", textContent: "代替がある理由" }));
+  for (const [tag, ch, name, why] of ALTS) {
+    $("alts").append(el("div", { className: "tag", textContent: `${tag} ${name}` }));
+    for (const [cls, feat] of [["ocra", null], ["ocra", tag], ["orig", null], ["orig", tag]]) {
+      const g = el("div", { className: `g ${cls}`, textContent: ch });
+      if (feat) g.style.fontFeatureSettings = `"${feat}" 1`;
+      $("alts").append(g);
+    }
+    $("alts").append(el("div", { className: "why", textContent: why }));
+  }
+
+  // ---- 全文字 ----
+
+  for (const ch of CHARS) {
+    $("grid").append(el("div", { className: "cell" },
+      el("div", { className: "stack" }, el("span", { className: "ocra", textContent: ch }), el("span", { className: "orig", textContent: ch })),
+      el("div", { className: "u", textContent: "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0") })));
+  }
+
+  // ---- アニメーション（wght と ROND を周期をずらして往復させる。バリアブルフォントのときだけ） ----
+
   let raf = null;
   function stopAnimation() {
     if (raf) cancelAnimationFrame(raf);
     raf = null;
-    $("animate").setAttribute("aria-pressed", "false");
+    pressed($("animate"), false);
   }
   $("animate").addEventListener("click", () => {
     if (raf) { stopAnimation(); return; }
-    $("animate").setAttribute("aria-pressed", "true");
+    pressed($("animate"), true);
     const t0 = performance.now();
     const tick = (t) => {
       const s = (t - t0) / 1000;
       wght.value = Math.round(500 - 400 * Math.cos(s * 0.9));
       rond.value = Math.round(50 + 50 * Math.cos(s * 0.37));
       apply();
-      $("animate").setAttribute("aria-pressed", "true");
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
   });
 
-  // フォントを読み込む。作り直したフォントがキャッシュで隠れないよう、毎回 URL を変える
-  const face = new FontFace("OCR-A Axis VF", `url("dist/OCRAAxis-VF.ttf?t=${Date.now()}")`, { weight: "100 900" });
-  document.fonts.add(face);
-  const origFace = new FontFace("OCR-A original", 'url("ref/OCRA.ttf")');
-  document.fonts.add(origFace);
-  origFace.load();
-  face.load().then(() => {
-    $("status").textContent = "";
-  }).catch(() => {
-    $("status").innerHTML = '<span class="error">フォントを読み込めませんでした。</span> ocra フォルダで <code>python3 -m http.server</code> を実行し、http://localhost:8000/specimen.html を開いてください。';
-  });
-
+  vfFace.load().catch(() => showError(
+    "フォントを読み込めませんでした。リポジトリのフォルダで「python3 -m http.server 8765」を実行し、http://127.0.0.1:8765/specimen.htmlを開いてください。"));
+  origFace.load().catch(() => showError("比較用の ref/OCRA.ttf を読み込めませんでした。"));
   apply();
 </script>
 </body>
