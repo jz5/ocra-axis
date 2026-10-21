@@ -92,6 +92,11 @@
   .matrix { display: grid; gap: 4px 16px; grid-template-columns: auto 1fr; align-items: baseline; }
   .matrix .lab { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
   .matrix .row { font-size: 34px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  .alts { display: grid; grid-template-columns: auto auto repeat(4, minmax(64px, 1fr)); gap: 6px 14px; align-items: center; }
+  .alts .h { font-size: 11px; color: var(--muted); }
+  .alts .g { font-size: 56px; line-height: 1.15; text-align: center; background: var(--cell); border: 1px solid var(--line); border-radius: 6px; }
+  .alts .why { font-size: 12px; color: var(--muted); max-width: 26em; }
+  .alts label { font-size: 13px; white-space: nowrap; cursor: pointer; }
   .note { color: var(--muted); font-size: 12px; }
   .error { color: var(--accent); }
 </style>
@@ -137,6 +142,12 @@ abcdefghijklmnopqrstuvwxyz
     <h2>元の OCR-A と比較</h2>
     <div class="legend"><span>OCRA Stroke（今の設定）</span><span class="o">元の OCR-A（Tsukurimashou 版 OCRA.ttf）</span></div>
     <div class="compare" id="compare"></div>
+  </section>
+
+  <section>
+    <h2>代替字形（OpenType の ss01〜ss05）</h2>
+    <p class="note">元の OCR-A に入っている代わりの形です。チェックを入れると、サンプルと比較の欄でもその代替字形に切り替わります。</p>
+    <div class="alts" id="alts"></div>
   </section>
 
   <section>
@@ -228,6 +239,50 @@ abcdefghijklmnopqrstuvwxyz
   }
   $("sample").addEventListener("input", renderCompare);
   renderCompare();
+
+  // 代替字形。標準と代替を、今のフォントと元の OCR-A で並べる
+  const ALTS = [
+    ["ss01", ".", "ピリオド", "標準の形だと、一部のプリンターで紙に穴があくため"],
+    ["ss02", "?", "疑問符", "下の小さな点が、エンボス加工のカードなどで作りにくく、紙に穴もあくため"],
+    ["ss03", "'", "アポストロフィ", "古い版の形"],
+    ["ss04", ",", "カンマ", "標準の形だと、一部のプリンターで紙に穴があくため"],
+    ["ss05", "-", "ハイフン", "古い版の形"],
+  ];
+  const enabled = new Set();
+  function applyFeatures() {
+    const value = enabled.size ? [...enabled].map((t) => `"${t}" 1`).join(", ") : "normal";
+    for (const id of ["sample", "compare"]) $(id).style.fontFeatureSettings = value;
+  }
+  {
+    const box = $("alts");
+    for (const text of ["", "", "標準", "代替", "元の標準", "元の代替"]) {
+      const h = document.createElement("div");
+      h.className = "h";
+      h.textContent = text;
+      box.append(h);
+    }
+    for (const [tag, ch, name, why] of ALTS) {
+      const label = document.createElement("label");
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.addEventListener("change", () => {
+        check.checked ? enabled.add(tag) : enabled.delete(tag);
+        applyFeatures();
+      });
+      label.append(check, ` ${tag} ${name}`);
+      const note = document.createElement("div");
+      note.className = "why";
+      note.textContent = why;
+      box.append(label, note);
+      for (const [cls, feat] of [["ocra", null], ["ocra", tag], ["orig", null], ["orig", tag]]) {
+        const g = document.createElement("div");
+        g.className = "g " + cls;
+        g.textContent = ch;
+        if (feat) g.style.fontFeatureSettings = `"${feat}" 1`;
+        box.append(g);
+      }
+    }
+  }
 
   // 太さ × 角の丸み（スライダーとは独立した固定の比較）
   const MATRIX_TEXT = "ABC 0123 abc @&$";

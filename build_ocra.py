@@ -24,6 +24,7 @@ from fontTools.ttLib.tables import ttProgram
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphCoordinates
 
 FAMILY = "OCRA Stroke"
+FEATURES = Path(__file__).with_name("ocra.fea")
 UPM = 1000
 ASCENT, DESCENT = 800, -200
 STANDARD_WIDTH = 101  # ANSI の線幅 T
@@ -1128,6 +1129,8 @@ def build_master(glyphs, preps, width, roundness, style):
                        "description": "OCR-A rebuilt from its ANSI X3.17 centerlines with variable stroke width and corner roundness."})
     fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT, usWinAscent=ASCENT + 100, usWinDescent=-DESCENT + 100)
     fb.setupPost(isFixedPitch=1)
+    # 代替字形を呼び出す機能（元の OCR パッケージの ocra.fea。aalt と ss01〜ss05）
+    fb.addOpenTypeFeatures(FEATURES.read_text())
     fb.font["head"].glyphDataFormat = 0
     for g in fb.font["glyf"].glyphs.values():
         g.recalcBounds(fb.font["glyf"])
