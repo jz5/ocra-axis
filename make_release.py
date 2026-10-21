@@ -1,13 +1,14 @@
 """バリアブルフォントから、配布用の静的フォントを書き出す。
 
-使い方: python3 make_release.py <VF.ttf> <出力ディレクトリ>
-（skia-pathops が必要: pip install fonttools skia-pathops）
+使い方: .venv/bin/python -I make_release.py <VF.ttf> <出力ディレクトリ>
+（重なりの除去に skia-pathops が要る。requirements.txt を .venv に入れておく。ふだんは build.sh から呼ぶ）
 
 丸め版（OCR-A Axis）と角版（OCR-A Axis Sharp）を別のファミリーにし、
 それぞれ 9 ウェイト × 立体／Oblique の 18 ファイルを作る。
 アプリのスタイル切り替え（Regular / Bold / Italic）が正しく働くよう、
 名前と OS/2・head の印を設定する。
 """
+import argparse
 import math
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -17,26 +18,27 @@ from fontTools.ttLib import TTFont
 from fontTools.ttLib.removeOverlaps import removeOverlaps
 from fontTools.varLib.instancer import instantiateVariableFont
 
-WEIGHTS = {100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular", 500: "Medium",
-           600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black"}
-SLANT = -10
-FAMILIES = {100: ("OCR-A Axis", "OCRAAxis"), 0: ("OCR-A Axis Sharp", "OCRAAxisSharp")}  # ROND → (ファミリー名, PostScript 名)
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I で実行しても fontinfo を読めるように
+import fontinfo  # noqa: E402
+from fontinfo import FAMILIES, SLANT, WEIGHTS  # noqa: E402
 
 
-def set_names(font, family, ps_family, wname, oblique):
-    style = wname if not oblique else ("Oblique" if wname == "Regular" else f"{wname} Oblique")
+def set_names(font, wght, rond, oblique):
+    family = FAMILIES[rond][0]
+    wname = WEIGHTS[wght]
+    style = fontinfo.static_style(wght, oblique)
     ribbi = wname in ("Regular", "Bold")
     # 古いアプリ向けの名前（ファミリーごとに Regular / Bold / Italic / Bold Italic の4つまで）
     legacy_family = family if ribbi else f"{family} {wname}"
     legacy_style = {(False, False): "Regular", (True, False): "Bold",
                     (False, True): "Italic", (True, True): "Bold Italic"}[(wname == "Bold", oblique)]
-    ps_name = f"{ps_family}-{style.replace(' ', '')}"
+    ps = fontinfo.ps_name(wght, rond, oblique)
     name = font["name"]
     name.names = [r for r in name.names if r.nameID not in (1, 2, 3, 4, 6, 16, 17, 25)]
-    for name_id, value in ((1, legacy_family), (2, legacy_style), (3, f"{ps_name};{font['OS/2'].achVendID}"),
-                           (4, f"{family} {style}"), (6, ps_name), (16, family), (17, style)):
+    for name_id, value in ((1, legacy_family), (2, legacy_style), (3, fontinfo.unique_id(ps)),
+                           (4, f"{family} {style}"), (6, ps), (16, family), (17, style)):
         name.setName(value, name_id, 3, 1, 0x409)
-    return ps_name
+    return ps
 
 
 def set_style_bits(font, wght, wname, oblique):
@@ -59,27 +61,31 @@ def set_style_bits(font, wght, wname, oblique):
 
 def build(job):
     src, out, wght, rond, oblique = job
-    family, ps_family = FAMILIES[rond]
-    wname = WEIGHTS[wght]
     font = instantiateVariableFont(TTFont(src), {"wght": wght, "ROND": rond, "slnt": SLANT if oblique else 0})
     removeOverlaps(font)
-    for tag in ("STAT",):
-        if tag in font:
-            del font[tag]
-    ps_name = set_names(font, family, ps_family, wname, oblique)
-    set_style_bits(font, wght, wname, oblique)
-    path = Path(out) / f"{ps_name}.ttf"
+    # 静的フォントには軸がないので、軸ごとのスタイル名の表（STAT）は要らない
+    del font["STAT"]
+    ps = set_names(font, wght, rond, oblique)
+    set_style_bits(font, wght, WEIGHTS[wght], oblique)
+    # STAT や fvar のために作った名前（ID 256 以降で、どこからも使われなくなったもの）を消す
+    font["name"].removeUnusedNames(font)
+    path = Path(out) / f"{ps}.ttf"
     font.save(path)
     return str(path)
 
 
-def main(src, out):
-    Path(out).mkdir(parents=True, exist_ok=True)
-    jobs = [(src, out, wght, rond, oblique) for rond in FAMILIES for oblique in (False, True) for wght in WEIGHTS]
+def main():
+    parser = argparse.ArgumentParser(description="バリアブルフォントから、配布用の静的フォント 36 個を書き出す。")
+    parser.add_argument("vf", help="バリアブルフォント（OCRAAxis-VF.ttf）")
+    parser.add_argument("outdir", help="出力ディレクトリ")
+    args = parser.parse_args()
+    Path(args.outdir).mkdir(parents=True, exist_ok=True)
+    jobs = [(args.vf, args.outdir, wght, rond, oblique)
+            for rond in FAMILIES for oblique in (False, True) for wght in WEIGHTS]
     with ProcessPoolExecutor() as pool:
         for path in pool.map(build, jobs):
             print("wrote", path)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main()

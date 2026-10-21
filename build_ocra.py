@@ -1,16 +1,19 @@
-"""OCR-A の中心線（skeleton-round.txt）から、線幅と角の丸みを変えられるフォントを作る。
+"""OCR-A の中心線（skeleton-round.txt）から、線幅・角の丸み・傾きを変えられるフォントを作る。
 
-使い方: python3 build_ocra.py skeleton-round.txt 出力ディレクトリ
+使い方: .venv/bin/python -I build_ocra.py skeleton-round.txt 出力ディレクトリ
+（出力ディレクトリに OCRAAxis-VF.ttf と、作業用の masters/ を書き出す。ふだんは build.sh から呼ぶ）
 
 軸:
-  wght  線幅。400 で ANSI X3.17 の線幅 T (101/1000em)
+  wght  線幅。100〜900 で、線幅 40 / 101 / 180 の3つのマスター。400 で ANSI X3.17 の線幅 T (101/1000em)
   ROND  角の丸み。100 で元の OCR-A（丸ペンと丸い角）、0 で角だけの OCR-A
+  slnt  傾き。0〜−10 度。出来上がった立体の輪郭を、高さ SLANT_CENTER_Y を中心に傾ける
 
 線1本を1つの輪郭（左の縁 → 終端のキャップ → 右の縁 → 始端のキャップ）にする。
 頂点ごと・キャップごとの点の数をマスターによらず固定にして、そのまま補間できるようにする。
 輪郭どうしの重なりは線が交わる所だけにとどめる
 （重なった輪郭が多いと、macOS の CoreText がバリアブルフォントを塗り損ねて細線を描く）。
 """
+import argparse
 import copy
 import math
 import sys
@@ -21,20 +24,22 @@ from fontTools.agl import toUnicode
 from fontTools.designspaceLib import AxisDescriptor, DesignSpaceDocument, InstanceDescriptor, SourceDescriptor
 from fontTools.fontBuilder import FontBuilder
 from fontTools.otlLib.builder import buildStatTable
+from fontTools.ttLib import newTable
 from fontTools.ttLib.tables import ttProgram
+from fontTools.ttLib.tables.O_S_2f_2 import Panose
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphCoordinates
 
-FAMILY = "OCR-A Axis"
-VENDOR_ID = "prnm"  # OS/2 のベンダー ID（4 文字）
-PS_FAMILY = "OCRAAxis"  # PostScript 名に使う（空白や記号を含めない）
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I で実行しても fontinfo を読めるように
+import fontinfo  # noqa: E402
+from fontinfo import FAMILY, PS_FAMILY, SLANT, VENDOR_ID  # noqa: E402
+
 FEATURES = Path(__file__).with_name("ocra.fea")
 UPM = 1000
-ASCENT, DESCENT = 800, -200
+ASCENT, DESCENT = 800, -200  # 行の高さ（sTypo と hhea）
+ITALIC, REGULAR, USE_TYPO_METRICS, OBLIQUE = 1 << 0, 1 << 6, 1 << 7, 1 << 9  # OS/2 の fsSelection のビット
 STANDARD_WIDTH = 101  # ANSI の線幅 T
 WEIGHTS = {100: 40, 400: STANDARD_WIDTH, 900: 180}  # wght → 線幅
-STYLES = {100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular", 500: "Medium",
-          600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black"}
-SLANT = -10  # 斜めの軸（slnt）の最大。度で、負の値が右に傾く
+STYLES = fontinfo.WEIGHTS  # wght → スタイル名
 SLANT_CENTER_Y = 390  # 斜めにするときの中心の高さ（字の高さ 780 の半分）。上下が左右に同じだけずれる
 ARC_STEPS = 6  # 角の丸め（ベジェ1本）を何本の線分に割るか（粗いと内側の縁がガタつく）
 CHAMFER_GLYPHS = {"B"}  # 角版で丸めの角を 45° ずつの2つの角に分けて面取りにする字（B が「日」にならないように）
@@ -44,11 +49,6 @@ K_JOIN = 13  # 頂点の外側の角を表す点の数（奇数。真ん中の�
 K_CAP = 17  # キャップを表す点の数（両側の縁の点を除く。奇数で真ん中が端の正面）
 RING = 12  # 点（ドット）の輪郭のオンカーブ点の数
 MITER_LIMIT = 3.0  # 留め継ぎの先端がこれ以上伸びるなら面取りする
-COPYRIGHT = (
-    "METAFONT-84 Definition for OCR-A: (C) Copyright 1988, 1989 Richard B. Wales. "
-    "MetaType1 translation by Matthew Skala (public domain). "
-    "Stroke-based variable version derived from the Tsukurimashou OCR package."
-)
 
 
 # ---- 幾何 ----------------------------------------------------------------
@@ -201,9 +201,11 @@ def arc_chain(v0, turn, m):
 
 def read_skeleton(path):
     glyphs = []
-    lines = iter(Path(path).read_text().splitlines())
+    lines = iter(Path(path).read_text(encoding="utf-8").splitlines())
     for line in lines:
         f = line.split()
+        if not f:
+            continue
         if f[0] == "G":
             g = {"name": f[1], "code": int(f[2]), "advance": float(f[3]),
                  "strokes": [], "fills": [], "corners": [], "dots": []}
@@ -233,12 +235,12 @@ def split_bezier(seg):
 
 
 def tangent_in(seg):
-    p0, p1, p2, p3 = seg
+    p0, p1, p2, _ = seg
     return unit(sub(p1, p0) if p1 != p0 else sub(p2, p0))
 
 
 def tangent_out(seg):
-    p0, p1, p2, p3 = seg
+    _, p1, p2, p3 = seg
     return unit(sub(p3, p2) if p3 != p2 else sub(p3, p1))
 
 
@@ -506,7 +508,7 @@ class Stroke:
         pts = collapse_to_corner(chain, fractions)
         side = 0 if s > 0 else 1  # 外側が左なら左の列、右なら右の列を置き換える
         for idx, i in enumerate(g):
-            l, r, inner = sides[i]
+            l, r, _ = sides[i]
             seg = pts[idx * K_JOIN:(idx + 1) * K_JOIN]
             sides[i] = (seg, r, "R") if side == 0 else (l, seg, "L")
 
@@ -537,11 +539,11 @@ class Stroke:
         # （先に端点を動かすと、鋭角で遠くへ飛んだ内側の点に端点が引っぱられる）
         moved = {}
         for phase in (1, 2):
-            self._clean_pass(lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
+            self._clean_pass(lists, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
                              phase, moved)
         return lists, moved
 
-    def _clean_pass(self, lists, inner, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
+    def _clean_pass(self, lists, adjustable, endpoints, live, swallowed, segs, pts, n, h, sign, sharp_mode,
                     phase, moved):
         for _ in range(4 * n):
             changed = False
@@ -1118,6 +1120,39 @@ def axis_map(wght):
     raise ValueError(wght)
 
 
+def notdef_glyph(width):
+    """フォントにない文字の代わりに出す、中抜きの長方形（点の並びはどの太さでも同じ）。"""
+    x0, x1, y0, y1 = 100, 623, 0, 780
+    w = width
+    glyph = Glyph()
+    # TrueType では外側を時計回り、穴を反時計回りにする
+    glyph.coordinates = GlyphCoordinates([(x0, y0), (x0, y1), (x1, y1), (x1, y0),
+                                          (x0 + w, y0 + w), (x1 - w, y0 + w), (x1 - w, y1 - w), (x0 + w, y1 - w)])
+    glyph.coordinates.toInt()
+    glyph.flags = bytearray([1] * 8)
+    glyph.endPtsOfContours = [3, 7]
+    glyph.numberOfContours = 2
+    glyph.program = ttProgram.Program()
+    glyph.program.fromBytecode(b"")
+    return glyph
+
+
+def add_rasterizer_tables(font):
+    """ヒントのないフォント向けの prep と gasp。
+
+    prep では smart dropout control を有効にして、小さいサイズで細い線が消えないようにする。
+    gasp では、どのサイズでもグレースケールと ClearType の滑らかな描画を使わせる。
+    """
+    prep = newTable("prep")
+    prep.program = ttProgram.Program()
+    prep.program.fromAssembly(["PUSHW[ ]", "511", "SCANCTRL[ ]", "PUSHB[ ]", "4", "SCANTYPE[ ]"])
+    font["prep"] = prep
+    gasp = newTable("gasp")
+    gasp.version = 1
+    gasp.gaspRange = {0xFFFF: 0x000F}
+    font["gasp"] = gasp
+
+
 def build_master(glyphs, preps, width, roundness, slant, style):
     order = [".notdef"] + [g["name"] for g in glyphs]
     fb = FontBuilder(UPM, isTTF=True)
@@ -1132,13 +1167,14 @@ def build_master(glyphs, preps, width, roundness, slant, style):
         u = chr(g["code"]) if 32 <= g["code"] < 127 else toUnicode(g["name"])
         if len(u) == 1:
             cmap[ord(u)] = g["name"]
+    cmap[0xA0] = cmap[0x20]  # ノーブレークスペースは空白と同じ字形
     fb.setupCharacterMap(cmap)
-    empty = Glyph()
-    empty.numberOfContours = 0
-    fb.setupGlyf({".notdef": empty,
+    fb.setupGlyf({".notdef": slant_glyph(notdef_glyph(width), slant),
                   **{g["name"]: slant_glyph(draw_glyph(adjusted(preps[g["name"]], g["name"], width), width, roundness), slant)
                      for g in glyphs}})
-    adv = int(round(glyphs[0]["advance"]))
+    advances = {round(g["advance"]) for g in glyphs}
+    assert len(advances) == 1, f"等幅でない: {advances}"
+    adv = advances.pop()
     glyf = fb.font["glyf"]
     for g in glyf.glyphs.values():
         g.recalcBounds(glyf)
@@ -1148,18 +1184,48 @@ def build_master(glyphs, preps, width, roundness, slant, style):
     # テキストカーソルの傾き（斜めのマスターだけ）。バリアブルフォントでは MVAR で角度に合わせて変わる
     fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT, caretSlopeRise=1000,
                              caretSlopeRun=round(math.tan(math.radians(-slant)) * 1000))
-    fb.setupNameTable({"familyName": FAMILY, "styleName": style, "fullName": f"{FAMILY} {style}",
-                       "psName": f"{PS_FAMILY}-{style.replace(' ', '')}",
-                       "copyright": COPYRIGHT,
-                       "description": "OCR-A rebuilt from its ANSI X3.17 centerlines with variable stroke width and corner roundness."})
-    fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT, usWinAscent=ASCENT + 100, usWinDescent=-DESCENT + 100,
-                achVendID=VENDOR_ID)
-    fb.setupPost(isFixedPitch=1)
+    ps = f"{PS_FAMILY}-{style.replace(' ', '')}"
+    fb.setupNameTable({"copyright": fontinfo.COPYRIGHT,
+                       "familyName": FAMILY, "styleName": style, "fullName": f"{FAMILY} {style}",
+                       "uniqueFontIdentifier": fontinfo.unique_id(ps), "version": f"Version {fontinfo.VERSION}",
+                       "psName": ps,
+                       "manufacturer": fontinfo.MANUFACTURER, "designer": fontinfo.DESIGNER,
+                       "description": fontinfo.DESCRIPTION,
+                       "vendorURL": fontinfo.URL, "designerURL": fontinfo.URL,
+                       "licenseDescription": fontinfo.LICENSE_DESCRIPTION, "licenseInfoURL": fontinfo.LICENSE_URL},
+                      mac=False)
+    fb.font["head"].fontRevision = float(fontinfo.VERSION)
+    fb.font["head"].macStyle = 0 if slant == 0 else 2  # 斜めのマスターは OS/2 の ITALIC と合わせる
+
+    # 字の高さ・下線・取り消し線は、そのマスターの字形から決める（バリアブルフォントでは MVAR で太さに合わせて変わる）。
+    # 下線は _ に、取り消し線は - に合わせる。上付き・下付きは字の 65%×60% を、斜めのマスターでは傾きに沿ってずらす
+    def box(name):
+        return glyf[name].yMin, glyf[name].yMax
+    under, hyphen = box("underscore"), box("hyphen")
+    lean = math.tan(math.radians(-slant))
+    sub_y, sup_y = 75, 350
+    # 版 4 にする（斜体の OBLIQUE と USE_TYPO_METRICS のビットは版 4 から）。
+    # USE_TYPO_METRICS で、Windows でも行の高さを sTypo の値（ASCENT − DESCENT）にする。
+    # usWin の値は、すべてのマスターができてから字のインクの範囲に合わせる（set_win_metrics）。
+    # 埋め込みは制限しない（fsType 0。元の OCRA.ttf と同じ）。PANOSE で等幅であることを示す。
+    # 文字はラテン文字だけなので、コードページは Latin 1 だけにする
+    panose = Panose()
+    panose.bFamilyType, panose.bProportion = 2, 9  # ラテン文字のテキスト、等幅
+    fb.setupOS2(version=4, sTypoAscender=ASCENT, sTypoDescender=DESCENT,
+                fsSelection=USE_TYPO_METRICS | (REGULAR if slant == 0 else ITALIC | OBLIQUE),
+                fsType=0, panose=panose, achVendID=VENDOR_ID, ulCodePageRange1=1,
+                sxHeight=glyf["x"].yMax, sCapHeight=glyf["H"].yMax,
+                ySubscriptXSize=650, ySubscriptYSize=600, ySubscriptYOffset=sub_y,
+                ySubscriptXOffset=round(-lean * sub_y),
+                ySuperscriptXSize=650, ySuperscriptYSize=600, ySuperscriptYOffset=sup_y,
+                ySuperscriptXOffset=round(lean * sup_y),
+                yStrikeoutSize=hyphen[1] - hyphen[0], yStrikeoutPosition=hyphen[1])
+    fb.setupPost(isFixedPitch=1, italicAngle=float(slant),
+                 underlineThickness=under[1] - under[0], underlinePosition=round((under[0] + under[1]) / 2))
     # 代替字形を呼び出す機能（元の OCR パッケージの ocra.fea。aalt と ss01〜ss05）
-    fb.addOpenTypeFeatures(FEATURES.read_text())
+    fb.addOpenTypeFeatures(FEATURES.read_text(encoding="utf-8"))
     fb.font["head"].glyphDataFormat = 0
-    for g in fb.font["glyf"].glyphs.values():
-        g.recalcBounds(fb.font["glyf"])
+    add_rasterizer_tables(fb.font)
     fb.setupMaxp()
     return fb.font
 
@@ -1175,6 +1241,20 @@ def style_name(wght, rond, slant):
     return " ".join(parts)
 
 
+def set_win_metrics(fonts):
+    """usWinAscent/usWinDescent を、全マスターの字のインクの上端・下端にそろえる。
+
+    Windows の古い描画（GDI）は、この範囲の外を切り落とす。
+    │ は上端が 1106 まで、g j p は太い角版で −252 まで届く。
+    途中の太さや丸みの形はマスターの間の補間なので、マスターの範囲に収まる。
+    """
+    y_max = max(g.yMax for f in fonts for g in f["glyf"].glyphs.values() if g.numberOfContours > 0)
+    y_min = min(g.yMin for f in fonts for g in f["glyf"].glyphs.values() if g.numberOfContours > 0)
+    for f in fonts:
+        f["OS/2"].usWinAscent = max(ASCENT, y_max)
+        f["OS/2"].usWinDescent = max(-DESCENT, -y_min)
+
+
 def add_stat(vf):
     """アプリがスタイル名を組み立てるための、軸ごとのスタイル名の表（STAT）。"""
     weights = [{"value": v, "name": n, **({"flags": 0x2, "linkedValue": 700} if v == 400 else {})}
@@ -1188,11 +1268,15 @@ def add_stat(vf):
     ], elidedFallbackName="Regular")
 
 
-def main(skeleton, outdir):
-    out = Path(outdir)
+def main():
+    parser = argparse.ArgumentParser(description="OCR-A の中心線からバリアブルフォント OCRAAxis-VF.ttf を作る。")
+    parser.add_argument("skeleton", help="中心線のファイル（skeleton-round.txt）")
+    parser.add_argument("outdir", help="出力ディレクトリ（OCRAAxis-VF.ttf と作業用の masters/ を書き出す）")
+    args = parser.parse_args()
+    out = Path(args.outdir)
     master_dir = out / "masters"
     master_dir.mkdir(parents=True, exist_ok=True)
-    glyphs = read_skeleton(skeleton)
+    glyphs = read_skeleton(args.skeleton)
     preps = {g["name"]: prepare(g) for g in glyphs}
 
     doc = DesignSpaceDocument()
@@ -1208,6 +1292,7 @@ def main(skeleton, outdir):
     s_axis.minimum, s_axis.default, s_axis.maximum = SLANT, 0, 0
     for axis in (w_axis, r_axis, s_axis):
         doc.addAxis(axis)
+    masters = []
     for wght, width in WEIGHTS.items():
         for rond in (0, 100):
             for slant in (0, SLANT):
@@ -1216,25 +1301,29 @@ def main(skeleton, outdir):
                 style = "Regular" if default else f"w{wght} r{rond} s{slant}"
                 font = build_master(glyphs, preps, width, rond / 100, slant, style)
                 path = master_dir / f"master-w{wght}-r{rond}-s{-slant}.ttf"
-                font.save(path)
+                masters.append((font, path))
                 src = SourceDescriptor()
                 src.path = str(path)
                 src.location = {"Weight": width, "Roundness": rond, "Slant": slant}
                 doc.addSource(src)
+    set_win_metrics([font for font, _ in masters])
+    for font, path in masters:
+        font.save(path)
     for slant in (0, SLANT):
         for rond in (100, 0):
             for wght in STYLES:
                 style = style_name(wght, rond, slant)
                 inst = InstanceDescriptor()
                 inst.familyName, inst.styleName = FAMILY, style
-                inst.postScriptFontName = f"{PS_FAMILY}-{style.replace(' ', '')}"
+                inst.postScriptFontName = fontinfo.ps_name(wght, rond, slant != 0)
                 inst.designLocation = {"Weight": axis_map(wght), "Roundness": rond, "Slant": slant}
                 doc.addInstance(inst)
     vf, _, _ = varLib.build(doc)
     add_stat(vf)
+    vf["name"].removeNames(platformID=1)  # STAT を作るときに加わる Mac 用の名前は要らない（Windows 用の名前だけで足りる）
     vf.save(out / f"{PS_FAMILY}-VF.ttf")
     print("wrote", out / f"{PS_FAMILY}-VF.ttf")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main()

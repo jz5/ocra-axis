@@ -1,0 +1,6 @@
+# フォントの組み立て（build_ocra.py）と静的フォントの書き出し（make_release.py）
+fonttools==4.58.0
+skia-pathops==0.8.0.post2
+# 確認用（組版）と見本画像（make_preview.py）
+uharfbuzz==0.50.2
+pillow==11.3.0

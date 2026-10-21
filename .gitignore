@@ -1,3 +1,7 @@
+# 作ったフォントは GitHub Releases で配る（./build.sh で dist/ に書き出す）
+dist/
+.venv/
 __pycache__/
 .DS_Store
-dist/masters/
+.vscode/
+.idea/
