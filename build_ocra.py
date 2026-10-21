@@ -11,6 +11,7 @@
 輪郭どうしの重なりは線が交わる所だけにとどめる
 （重なった輪郭が多いと、macOS の CoreText がバリアブルフォントを塗り損ねて細線を描く）。
 """
+import copy
 import math
 import sys
 from pathlib import Path
@@ -727,6 +728,62 @@ def dot_ring(center, h, sharp_mode):
     return pts
 
 
+# ---- 太いときの字形の調整 -----------------------------------------------
+
+# 太いと内側の空間が潰れる字の、中心線の調整。
+# 字ごとに「範囲 (x0, y0, x1, y1) にある中心線の点を (dx, dy) 動かす」を並べる。
+# 量は最も太いマスター（wght 900）でのもの。標準の太さ以下では動かさず、その間は比例させる。
+HEAVY_ADJUST = {
+    # 上下の横線を外側へ（上下の短い縦棒は、内側の端だけが横線と一緒に動く）
+    "dollar": [((150, 500, 575, 600), (0, 55)), ((150, 180, 575, 260), (0, -55))],
+    # 上の部分の下端を上げて、点との間を空ける
+    "question": [((200, 150, 320, 260), (0, 56))],
+    # 縦線を外側へ、横線を上下へ広げて、中の四角を残す
+    "numbersign": [((250, 0, 275, 800), (-20, 0)), ((450, 0, 475, 800), (20, 0)),
+                   ((150, 340, 575, 356), (0, -15)), ((150, 552, 575, 568), (0, 15))],
+    # 二重線の内側の線を字の中央寄りへずらして、二重線の間を空ける
+    "bracketleft": [((300, 0, 325, 800), (76, 0))],
+    "bracketright": [((400, 0, 425, 800), (-76, 0))],
+    # 上の輪の上半分を上へ広げて、輪の中の長方形の穴を残す
+    # （穴がつぶれると内側の縁が裏返り、途中の太さで斜めに歪む）
+    "Aring": [((200, 640, 525, 760), (0, 55))],
+}
+
+
+def heavy_amount(width):
+    """標準の太さで 0、最も太いマスターで 1。"""
+    heavy = WEIGHTS[max(WEIGHTS)]
+    return max(0.0, (width - STANDARD_WIDTH) / (heavy - STANDARD_WIDTH))
+
+
+def adjusted(prep, name, width):
+    """太さに合わせて中心線を動かした字形（調整がなければそのまま）。"""
+    rules = HEAVY_ADJUST.get(name)
+    k = heavy_amount(width)
+    if not rules or k == 0:
+        return prep
+    ensure_orient(prep)
+
+    def move(p):
+        for (x0, y0, x1, y1), (dx, dy) in rules:
+            if x0 <= p[0] <= x1 and y0 <= p[1] <= y1:
+                return (p[0] + dx * k, p[1] + dy * k)
+        return p
+
+    new = copy.deepcopy(prep)
+    for st in new["strokes"]:
+        # 角版の点も、同じ番号の丸め版の点が範囲に入るかで動かす（両方を同じだけ動かす）
+        deltas = [sub(move(p), p) for p in st.round]
+        st.round = [add(p, d) for p, d in zip(st.round, deltas)]
+        st.sharp = [add(p, d) for p, d in zip(st.sharp, deltas)]
+        st.infos = [None if x is None else (move(x[0]), x[1], move(x[2]), x[3], x[4]) for x in st.infos]
+        st.sharp_points = {move(p) for p in st.sharp_points}
+    new["dots"] = [move(p) for p in new["dots"]]
+    new["fills"] = [[move(p) for p in poly] for poly in new["fills"]]
+    new["extra_corners"] = [move(p) for p in new["extra_corners"]]
+    return new
+
+
 # ---- 字形 ------------------------------------------------------------------
 
 MAX_MERGE_TURN = 135  # 端どうしが出会う2本の線を、曲がりがこれ以内（度）ならつなぐ
@@ -896,14 +953,17 @@ def glyph_contours(prep, width, sharp_mode):
     return contours
 
 
+def ensure_orient(prep):
+    """輪郭の向きを丸め版・標準線幅で決めておく（時計回りが外側、穴だけ反時計回り）。"""
+    if prep["orient"] is None:
+        ref = glyph_contours(prep, STANDARD_WIDTH, False)
+        prep["orient"] = [(area([p for p, _ in c]) > 0) != (k in prep["holes"]) for k, c in enumerate(ref)]
+
+
 def draw_glyph(prep, width, roundness):
     """roundness: 1 で丸め版、0 で角版。点の数と並びはどのマスターでも同じ。"""
     contours = glyph_contours(prep, width, roundness < 0.5)
-    if prep["orient"] is None:
-        # 向きは丸め版・標準線幅で決めて、どのマスターでも同じにする（時計回りが外側）
-        ref = glyph_contours(prep, STANDARD_WIDTH, False)
-        # 穴（閉じた線の内側の縁）だけは反時計回りにする
-        prep["orient"] = [(area([p for p, _ in c]) > 0) != (k in prep["holes"]) for k, c in enumerate(ref)]
+    ensure_orient(prep)  # 向きはどのマスターでも同じにする
     coords, flags, ends = [], [], []
     for c, reverse in zip(contours, prep["orient"]):
         if reverse:
@@ -953,7 +1013,8 @@ def build_master(glyphs, preps, width, roundness, style):
     fb.setupCharacterMap(cmap)
     empty = Glyph()
     empty.numberOfContours = 0
-    fb.setupGlyf({".notdef": empty, **{g["name"]: draw_glyph(preps[g["name"]], width, roundness) for g in glyphs}})
+    fb.setupGlyf({".notdef": empty, **{g["name"]: draw_glyph(adjusted(preps[g["name"]], g["name"], width), width, roundness)
+                                       for g in glyphs}})
     adv = int(round(glyphs[0]["advance"]))
     glyf = fb.font["glyf"]
     for g in glyf.glyphs.values():
