@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OCRA Stroke</title>
+<title>OCR-A Axis</title>
 <style>
   :root {
     --bg: #f6f5f1;
@@ -35,8 +35,8 @@
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
   }
   .ocra {
-    font-family: "OCRA Stroke VF", monospace;
-    font-variation-settings: "wght" var(--wght), "ROND" var(--rond);
+    font-family: "OCR-A Axis VF", monospace;
+    font-variation-settings: "wght" var(--wght), "ROND" var(--rond), "slnt" var(--slnt);
   }
   header {
     position: sticky; top: 0; z-index: 10;
@@ -103,7 +103,7 @@
 </head>
 <body>
 <header>
-  <h1>OCRA Stroke</h1>
+  <h1>OCR-A Axis</h1>
   <div class="ctrl">
     <label for="wght">wght</label>
     <input id="wght" type="range" min="100" max="900" step="1" value="400">
@@ -113,6 +113,11 @@
     <label for="rond">ROND</label>
     <input id="rond" type="range" min="0" max="100" step="1" value="100">
     <output id="rond-out">100</output>
+  </div>
+  <div class="ctrl">
+    <label for="slnt">slnt</label>
+    <input id="slnt" type="range" min="-10" max="0" step="0.5" value="0">
+    <output id="slnt-out">0</output>
   </div>
   <div class="ctrl">
     <label for="size">サイズ</label>
@@ -140,7 +145,7 @@ abcdefghijklmnopqrstuvwxyz
 
   <section>
     <h2>元の OCR-A と比較</h2>
-    <div class="legend"><span>OCRA Stroke（今の設定）</span><span class="o">元の OCR-A（Tsukurimashou 版 OCRA.ttf）</span></div>
+    <div class="legend"><span>OCR-A Axis（今の設定）</span><span class="o">元の OCR-A（Tsukurimashou 版 OCRA.ttf）</span></div>
     <div class="compare" id="compare"></div>
   </section>
 
@@ -169,16 +174,18 @@ abcdefghijklmnopqrstuvwxyz
   ];
   const root = document.documentElement;
   const $ = (id) => document.getElementById(id);
-  const wght = $("wght"), rond = $("rond"), size = $("size");
+  const wght = $("wght"), rond = $("rond"), slnt = $("slnt"), size = $("size");
 
   function apply() {
     root.style.setProperty("--wght", wght.value);
     root.style.setProperty("--rond", rond.value);
+    root.style.setProperty("--slnt", slnt.value);
+    $("slnt-out").textContent = slnt.value;
     root.style.setProperty("--size", size.value + "px");
     $("wght-out").textContent = wght.value;
     $("rond-out").textContent = rond.value;
     $("size-out").textContent = size.value;
-    $("css").textContent = `font-variation-settings: "wght" ${wght.value}, "ROND" ${rond.value};`;
+    $("css").textContent = `font-variation-settings: "wght" ${wght.value}, "ROND" ${rond.value}, "slnt" ${slnt.value};`;
     for (const b of $("instances").children) {
       b.setAttribute("aria-pressed", String(+b.dataset.w === +wght.value && +b.dataset.r === +rond.value));
     }
@@ -198,11 +205,11 @@ abcdefghijklmnopqrstuvwxyz
     b.addEventListener("click", () => { stopAnimation(); set(w, r); });
     $("instances").append(b);
   }
-  for (const el of [wght, rond, size]) {
+  for (const el of [wght, rond, slnt, size]) {
     el.addEventListener("input", () => { if (el !== size) stopAnimation(); apply(); });
   }
 
-  // 全文字（上が OCRA Stroke、下が元の OCR-A）
+  // 全文字（上が OCR-A Axis、下が元の OCR-A）
   for (const ch of CHARS) {
     const cell = document.createElement("div");
     cell.className = "cell";
@@ -302,7 +309,7 @@ abcdefghijklmnopqrstuvwxyz
       lab.textContent = `wght ${w} / ROND ${r}`;
       const row = document.createElement("div");
       row.className = "row";
-      row.style.fontFamily = '"OCRA Stroke VF", monospace';
+      row.style.fontFamily = '"OCR-A Axis VF", monospace';
       row.style.fontVariationSettings = `"wght" ${w}, "ROND" ${r}`;
       row.textContent = MATRIX_TEXT;
       $("matrix").append(lab, row);
@@ -332,7 +339,7 @@ abcdefghijklmnopqrstuvwxyz
   });
 
   // フォントを読み込む。作り直したフォントがキャッシュで隠れないよう、毎回 URL を変える
-  const face = new FontFace("OCRA Stroke VF", `url("dist/OCRAStroke-VF.ttf?t=${Date.now()}")`, { weight: "100 900" });
+  const face = new FontFace("OCR-A Axis VF", `url("dist/OCRAAxis-VF.ttf?t=${Date.now()}")`, { weight: "100 900" });
   document.fonts.add(face);
   const origFace = new FontFace("OCR-A original", 'url("ref/OCRA.ttf")');
   document.fonts.add(origFace);

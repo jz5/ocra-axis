@@ -20,16 +20,22 @@ from fontTools import varLib
 from fontTools.agl import toUnicode
 from fontTools.designspaceLib import AxisDescriptor, DesignSpaceDocument, InstanceDescriptor, SourceDescriptor
 from fontTools.fontBuilder import FontBuilder
+from fontTools.otlLib.builder import buildStatTable
 from fontTools.ttLib.tables import ttProgram
 from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphCoordinates
 
-FAMILY = "OCRA Stroke"
+FAMILY = "OCR-A Axis"
+VENDOR_ID = "prnm"  # OS/2 のベンダー ID（4 文字）
+PS_FAMILY = "OCRAAxis"  # PostScript 名に使う（空白や記号を含めない）
 FEATURES = Path(__file__).with_name("ocra.fea")
 UPM = 1000
 ASCENT, DESCENT = 800, -200
 STANDARD_WIDTH = 101  # ANSI の線幅 T
 WEIGHTS = {100: 40, 400: STANDARD_WIDTH, 900: 180}  # wght → 線幅
-STYLES = {100: "Thin", 300: "Light", 400: "Regular", 700: "Bold", 900: "Black"}
+STYLES = {100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular", 500: "Medium",
+          600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black"}
+SLANT = -10  # 斜めの軸（slnt）の最大。度で、負の値が右に傾く
+SLANT_CENTER_Y = 390  # 斜めにするときの中心の高さ（字の高さ 780 の半分）。上下が左右に同じだけずれる
 ARC_STEPS = 6  # 角の丸め（ベジェ1本）を何本の線分に割るか（粗いと内側の縁がガタつく）
 CHAMFER_GLYPHS = {"B"}  # 角版で丸めの角を 45° ずつの2つの角に分けて面取りにする字（B が「日」にならないように）
 CHAMFER_TURN = 45
@@ -1055,6 +1061,20 @@ def glyph_contours(prep, width, sharp_mode):
     return contours
 
 
+def slant_glyph(glyph, slant):
+    """出来上がった輪郭を slant 度（slnt 軸の値。負なら右に傾く）だけ傾ける。
+
+    立体の字をそのまま傾けた形にする（一般的なオブリーク）。角版の四角は平行四辺形になり、
+    丸みや太さを変えたときの途中の形も立体と同じになる。
+    高さ SLANT_CENTER_Y を中心に傾けるので、字の上下が左右に同じだけずれる。
+    """
+    if slant == 0 or glyph.numberOfContours <= 0:
+        return glyph
+    k = math.tan(math.radians(-slant))
+    glyph.coordinates = GlyphCoordinates([(round(x + k * (y - SLANT_CENTER_Y)), y) for x, y in glyph.coordinates])
+    return glyph
+
+
 def ensure_orient(prep):
     """輪郭の向きを丸め版・標準線幅で決めておく（時計回りが外側、穴だけ反時計回り）。"""
     if prep["orient"] is None:
@@ -1098,7 +1118,7 @@ def axis_map(wght):
     raise ValueError(wght)
 
 
-def build_master(glyphs, preps, width, roundness, style):
+def build_master(glyphs, preps, width, roundness, slant, style):
     order = [".notdef"] + [g["name"] for g in glyphs]
     fb = FontBuilder(UPM, isTTF=True)
     fb.setupGlyphOrder(order)
@@ -1115,8 +1135,9 @@ def build_master(glyphs, preps, width, roundness, style):
     fb.setupCharacterMap(cmap)
     empty = Glyph()
     empty.numberOfContours = 0
-    fb.setupGlyf({".notdef": empty, **{g["name"]: draw_glyph(adjusted(preps[g["name"]], g["name"], width), width, roundness)
-                                       for g in glyphs}})
+    fb.setupGlyf({".notdef": empty,
+                  **{g["name"]: slant_glyph(draw_glyph(adjusted(preps[g["name"]], g["name"], width), width, roundness), slant)
+                     for g in glyphs}})
     adv = int(round(glyphs[0]["advance"]))
     glyf = fb.font["glyf"]
     for g in glyf.glyphs.values():
@@ -1124,10 +1145,15 @@ def build_master(glyphs, preps, width, roundness, style):
     # 左サイドベアリングは輪郭の左端と同じにする。0 のままだと、ROND や wght で
     # 輪郭の左端が動いたとき、ラスタライザがその分だけ字を横へずらして置いてしまう
     fb.setupHorizontalMetrics({n: (adv, getattr(glyf[n], "xMin", 0)) for n in order})
-    fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT)
-    fb.setupNameTable({"familyName": FAMILY, "styleName": style, "copyright": COPYRIGHT,
+    # テキストカーソルの傾き（斜めのマスターだけ）。バリアブルフォントでは MVAR で角度に合わせて変わる
+    fb.setupHorizontalHeader(ascent=ASCENT, descent=DESCENT, caretSlopeRise=1000,
+                             caretSlopeRun=round(math.tan(math.radians(-slant)) * 1000))
+    fb.setupNameTable({"familyName": FAMILY, "styleName": style, "fullName": f"{FAMILY} {style}",
+                       "psName": f"{PS_FAMILY}-{style.replace(' ', '')}",
+                       "copyright": COPYRIGHT,
                        "description": "OCR-A rebuilt from its ANSI X3.17 centerlines with variable stroke width and corner roundness."})
-    fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT, usWinAscent=ASCENT + 100, usWinDescent=-DESCENT + 100)
+    fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=DESCENT, usWinAscent=ASCENT + 100, usWinDescent=-DESCENT + 100,
+                achVendID=VENDOR_ID)
     fb.setupPost(isFixedPitch=1)
     # 代替字形を呼び出す機能（元の OCR パッケージの ocra.fea。aalt と ss01〜ss05）
     fb.addOpenTypeFeatures(FEATURES.read_text())
@@ -1136,6 +1162,30 @@ def build_master(glyphs, preps, width, roundness, style):
         g.recalcBounds(fb.font["glyf"])
     fb.setupMaxp()
     return fb.font
+
+
+def style_name(wght, rond, slant):
+    """名前付きスタイルの名前（例: Regular, Bold Oblique, Sharp, Sharp Thin Oblique）。"""
+    parts = ["Sharp"] if rond == 0 else []
+    wname = STYLES[wght]
+    if wname != "Regular" or (not parts and slant == 0):
+        parts.append(wname)
+    if slant != 0:
+        parts.append("Oblique")
+    return " ".join(parts)
+
+
+def add_stat(vf):
+    """アプリがスタイル名を組み立てるための、軸ごとのスタイル名の表（STAT）。"""
+    weights = [{"value": v, "name": n, **({"flags": 0x2, "linkedValue": 700} if v == 400 else {})}
+               for v, n in STYLES.items()]
+    buildStatTable(vf, [
+        {"tag": "wght", "name": "Weight", "values": weights},
+        {"tag": "ROND", "name": "Roundness",
+         "values": [{"value": 100, "name": "Round", "flags": 0x2}, {"value": 0, "name": "Sharp"}]},
+        {"tag": "slnt", "name": "Slant",
+         "values": [{"value": 0, "name": "Upright", "flags": 0x2}, {"value": SLANT, "name": "Oblique"}]},
+    ], elidedFallbackName="Regular")
 
 
 def main(skeleton, outdir):
@@ -1153,27 +1203,37 @@ def main(skeleton, outdir):
     r_axis = AxisDescriptor()
     r_axis.tag, r_axis.name = "ROND", "Roundness"
     r_axis.minimum, r_axis.default, r_axis.maximum = 0, 100, 100
-    doc.addAxis(w_axis)
-    doc.addAxis(r_axis)
+    s_axis = AxisDescriptor()
+    s_axis.tag, s_axis.name = "slnt", "Slant"
+    s_axis.minimum, s_axis.default, s_axis.maximum = SLANT, 0, 0
+    for axis in (w_axis, r_axis, s_axis):
+        doc.addAxis(axis)
     for wght, width in WEIGHTS.items():
         for rond in (0, 100):
-            font = build_master(glyphs, preps, width, rond / 100, f"w{wght} r{rond}")
-            path = master_dir / f"master-w{wght}-r{rond}.ttf"
-            font.save(path)
-            src = SourceDescriptor()
-            src.path = str(path)
-            src.location = {"Weight": width, "Roundness": rond}
-            doc.addSource(src)
-    for wght, wname in STYLES.items():
-        for rond, rname in ((100, ""), (0, "Sharp")):
-            style = " ".join(x for x in (rname, wname) if x) if wname != "Regular" or not rname else rname
-            inst = InstanceDescriptor()
-            inst.familyName, inst.styleName = FAMILY, style
-            inst.designLocation = {"Weight": axis_map(wght), "Roundness": rond}
-            doc.addInstance(inst)
+            for slant in (0, SLANT):
+                # 既定のマスター（標準の太さ・丸め版・立体）の名前が、バリアブルフォントの名前になる
+                default = (wght, rond, slant) == (400, 100, 0)
+                style = "Regular" if default else f"w{wght} r{rond} s{slant}"
+                font = build_master(glyphs, preps, width, rond / 100, slant, style)
+                path = master_dir / f"master-w{wght}-r{rond}-s{-slant}.ttf"
+                font.save(path)
+                src = SourceDescriptor()
+                src.path = str(path)
+                src.location = {"Weight": width, "Roundness": rond, "Slant": slant}
+                doc.addSource(src)
+    for slant in (0, SLANT):
+        for rond in (100, 0):
+            for wght in STYLES:
+                style = style_name(wght, rond, slant)
+                inst = InstanceDescriptor()
+                inst.familyName, inst.styleName = FAMILY, style
+                inst.postScriptFontName = f"{PS_FAMILY}-{style.replace(' ', '')}"
+                inst.designLocation = {"Weight": axis_map(wght), "Roundness": rond, "Slant": slant}
+                doc.addInstance(inst)
     vf, _, _ = varLib.build(doc)
-    vf.save(out / "OCRAStroke-VF.ttf")
-    print("wrote", out / "OCRAStroke-VF.ttf")
+    add_stat(vf)
+    vf.save(out / f"{PS_FAMILY}-VF.ttf")
+    print("wrote", out / f"{PS_FAMILY}-VF.ttf")
 
 
 if __name__ == "__main__":
