@@ -605,14 +605,8 @@ class Stroke:
             e = mul(d, 0.05)
             chain = self.square_cap([n, add(n, e), add(mul(n, -1), e), mul(n, -1)])
         elif sharp_mode or flagged:
-            # 線に直角な長方形の端。斜めの線では延ばす長さを縮め、線の主な向き
-            # （横に近い線なら横、縦に近い線なら縦）で、長方形の角が丸い端と同じ所
-            # （端点から線幅/2）まで届くようにする。
-            # そうしないと斜めの端が張り出し、ROND を下げると字が左右にずれる
-            a = 0 if abs(d[0]) >= abs(d[1]) else 1
-            reach = min(1.0, (1 - abs(n[a])) / abs(d[a]))
-            e = mul(d, reach)
-            chain = self.square_cap([n, add(n, e), add(mul(n, -1), e), mul(n, -1)])
+            # 線に直角な長方形の端（線幅/2 だけ延ばす。丸い端と同じ長さ）
+            chain = self.square_cap([n, add(n, d), add(mul(n, -1), d), mul(n, -1)])
         else:
             chain = arc_chain(n, -math.pi, K_CAP + 2)
         return [add(v, mul(p, h)) for p in chain[1:-1]]
@@ -731,13 +725,46 @@ def dot_ring(center, h, sharp_mode):
 # ---- 太いときの字形の調整 -----------------------------------------------
 
 # 太いと内側の空間が潰れる字の、中心線の調整。
-# 字ごとに「範囲 (x0, y0, x1, y1) にある中心線の点を (dx, dy) 動かす」を並べる。
-# 量は最も太いマスター（wght 900）でのもの。標準の太さ以下では動かさず、その間は比例させる。
+# 字ごとに「範囲 (x0, y0, x1, y1) にある中心線の点を動かす」規則を並べる（最初に当てはまった規則を使う）。
+# 動かす量 (dx, dy) は最も太いマスター（wght 900）でのもの。標準の太さ以下では動かさず、その間は比例させる。
+# 量の代わりに「点 → (dx, dy)」の関数も書ける（曲線を崩さずに引き伸ばすとき）。
+# 3つ目に "open" か "cyc" を書くと、開いた線か閉じた線だけに効く。
+
+
+def clamp01(t):
+    return max(0.0, min(1.0, t))
+
+
+def stretch_x(center, left, right, amount):
+    """center を動かさず、左端 left と右端 right を amount だけ外へ広げる（間は直線的に）。"""
+    def f(p):
+        x = p[0]
+        if x <= center:
+            return (-amount * clamp01((center - x) / (center - left)), 0)
+        return (amount * clamp01((x - center) / (right - center)), 0)
+    return f
+
+
+def shift_y(y_fixed, y_full, amount):
+    """y_fixed では動かさず、y_full から先は amount だけ縦に動かす（間は直線的に）。"""
+    return lambda p: (0, amount * clamp01((p[1] - y_fixed) / (y_full - y_fixed)))
+
+
+GLYPH_CENTER = 723 / 2  # 字幅（送り幅）の中心
+# 縦線3本の字（~ ⑀ M W）：真ん中の縦線を中心に、左右の縦線を外へ広げる
+WIDEN_THREE_STEMS = ((100, 0, 620, 800), stretch_x(GLYPH_CENTER, 163, 560, 25))
+
 HEAVY_ADJUST = {
     # 上下の横線を外側へ（上下の短い縦棒は、内側の端だけが横線と一緒に動く）
     "dollar": [((150, 500, 575, 600), (0, 55)), ((150, 180, 575, 260), (0, -55))],
-    # 上の部分の下端を上げて、点との間を空ける
-    "question": [((200, 150, 320, 260), (0, 56))],
+    # 縦線の下端を上げて点との間を空け、縦線の長さを残したまま上の斜め線を持ち上げて
+    # 平行な2本の斜め線の間を空ける（右の短い縦線も一緒に上げる）
+    "question": [((200, 150, 320, 260), (0, 56)), ((250, 295, 275, 315), (0, 35)),
+                 ((550, 635, 575, 655), (0, 35)), ((450, 720, 475, 740), (0, 40)),
+                 ((150, 465, 175, 485), (0, 85))],
+    # 点のない ?（代替字形）も、上の部分は同じように調整する
+    "question.alt": [((250, 295, 275, 315), (0, 35)), ((550, 635, 575, 655), (0, 35)),
+                     ((450, 720, 475, 740), (0, 40)), ((150, 465, 175, 485), (0, 85))],
     # 縦線を外側へ、横線を上下へ広げて、中の四角を残す
     "numbersign": [((250, 0, 275, 800), (-20, 0)), ((450, 0, 475, 800), (20, 0)),
                    ((150, 340, 575, 356), (0, -15)), ((150, 552, 575, 568), (0, 15))],
@@ -747,6 +774,42 @@ HEAVY_ADJUST = {
     # 上の輪の上半分を上へ広げて、輪の中の長方形の穴を残す
     # （穴がつぶれると内側の縁が裏返り、途中の太さで斜めに歪む）
     "Aring": [((200, 640, 525, 760), (0, 55))],
+    # 横棒を少し下げて三角形の穴を広げる（両端は脚に沿って動かす）
+    "A": [((200, 210, 225, 230), (-10.2, -35)), ((500, 210, 525, 230), (10.2, -35))],
+    # 点を上へ出して長さを保ち、本体の上端を少し下げる。横棒も下げて A の三角形の穴を残す
+    "Adieresis": [((150, 640, 575, 650), (0, 60)), ((150, 725, 575, 735), (0, 60)),
+                  ((200, 170, 225, 186), (-12, -40)), ((500, 170, 525, 186), (12, -40)),
+                  ((150, 0, 575, 600), shift_y(300, 560, -50))],
+    "Odieresis": [((150, 640, 575, 650), (0, 60)), ((150, 725, 575, 735), (0, 60)),
+                  ((150, 0, 575, 600), shift_y(50.5, 559.75, -50))],  # O は下端を基準に均等に縮める
+    "Udieresis": [((250, 640, 275, 650), (-22, 80)), ((250, 725, 275, 735), (-22, 60)),
+                  ((450, 640, 475, 650), (22, 80)), ((450, 725, 475, 735), (22, 60)),
+                  ((150, 0, 575, 600), shift_y(300, 560, -70))],
+    # 波線を上げ、本体の上端を少し下げる
+    "Ntilde": [((150, 680, 575, 735), (0, 35)), ((150, 0, 575, 480), shift_y(50, 475, -30))],
+    # 3本の縦線の間隔を、内側の縦線を中心に左右へ広げる
+    "at": [((100, 0, 620, 800), stretch_x(GLYPH_CENTER, 163, 560, 26))],
+    # 上下2本の線の間の隙間を残す
+    "bar": [((350, 480, 375, 500), (0, 12)), ((350, 280, 375, 300), (0, -12))],
+    # 3本の縦線の間隔を、真ん中の縦線を中心に左右へ広げる（送り幅は変えない）
+    "tilde": [WIDEN_THREE_STEMS],
+    "uni2440": [WIDEN_THREE_STEMS],
+    "M": [WIDEN_THREE_STEMS],
+    "W": [WIDEN_THREE_STEMS],
+    "m": [((100, 0, 620, 800), stretch_x(GLYPH_CENTER, 155, 568, 25))],
+    "w": [((100, 0, 620, 800), stretch_x(GLYPH_CENTER, 155, 568, 25))],
+    # 右下の折り返しを右へずらして、縦線との間を空ける（縦線の位置は変えない）
+    "one": [((545, 40, 575, 320), (27, 0))],
+    # O を左右に広げて、横切る斜め線の両側に隙間を作る
+    "Oslash": [((100, 0, 620, 800), stretch_x(GLYPH_CENTER, 182, 541, 30), "cyc")],
+    # 2本の横線を上下に離す
+    "equal": [((150, 295, 575, 315), (0, -15)), ((150, 507, 575, 527), (0, 15))],
+    # 上の小さな輪の左右の線を外側へ広げる（下の輪は動かさない）
+    "eight": [((240, 380, 485, 760), stretch_x(GLYPH_CENTER, 262, 461, 15), "open")],
+    # A の部分の三角形が開くよう、斜め線の下端を左へ、縦線を右へずらし、横棒を下げる
+    # （斜め線の下端を左へ寄せすぎると、太い角版で字の枠の左外へはみ出す）
+    "AE": [((215, 210, 235, 230), (-63, -100)), ((400, 210, 420, 230), (45, -100)),
+           ((400, 0, 420, 800), (45, 0)), ((150, 40, 175, 60), (-35, 0))],
 }
 
 
@@ -756,28 +819,66 @@ def heavy_amount(width):
     return max(0.0, (width - STANDARD_WIDTH) / (heavy - STANDARD_WIDTH))
 
 
+# 太さによらずインクの両端の位置を変えない字。
+# │（Long Vertical Mark）は高さが OCR の標準の行送り 1/6 インチとほぼ同じで、
+# 行を重ねると上下がつながって1本の縦線になるように作られている
+FIXED_EXTENT_GLYPHS = {"uni2502"}
+
+
+def fixed_extent(prep, width):
+    """線の両端を太さに応じて内側（細いときは外側）へずらし、インクの両端を標準の太さと同じにする。
+
+    端が四角か丸く、線幅/2 だけ延びる開いた線だけを前提にしている
+    （延ばさない端や、点・補いの角は扱わない。今は │ だけに使う）。
+    """
+    shift = width / 2 - STANDARD_WIDTH / 2
+    if shift == 0:
+        return prep
+    ensure_orient(prep)
+    new = copy.deepcopy(prep)
+    for st in new["strokes"]:
+        if st.cyc:
+            continue
+        for i, j in ((0, 1), (st.n - 1, st.n - 2)):
+            old = st.round[i]
+            for pts in (st.round, st.sharp):
+                pts[i] = add(pts[i], mul(unit(sub(pts[j], pts[i])), shift))
+            # 四角い端にする指定（元の fill_corners）も、動かした端点に付け直す
+            if old in st.sharp_points:
+                st.sharp_points.discard(old)
+                st.sharp_points.add(st.round[i])
+    return new
+
+
 def adjusted(prep, name, width):
     """太さに合わせて中心線を動かした字形（調整がなければそのまま）。"""
+    if name in FIXED_EXTENT_GLYPHS:
+        return fixed_extent(prep, width)
     rules = HEAVY_ADJUST.get(name)
     k = heavy_amount(width)
     if not rules or k == 0:
         return prep
     ensure_orient(prep)
 
-    def move(p):
-        for (x0, y0, x1, y1), (dx, dy) in rules:
+    def move(p, kind=None):
+        for rule in rules:
+            (x0, y0, x1, y1), delta = rule[0], rule[1]
+            if len(rule) > 2 and kind is not None and rule[2] != kind:
+                continue  # 線の種類の指定は線にだけ効く（点・塗り・補いの角は kind=None）
             if x0 <= p[0] <= x1 and y0 <= p[1] <= y1:
+                dx, dy = delta(p) if callable(delta) else delta
                 return (p[0] + dx * k, p[1] + dy * k)
         return p
 
     new = copy.deepcopy(prep)
     for st in new["strokes"]:
-        # 角版の点も、同じ番号の丸め版の点が範囲に入るかで動かす（両方を同じだけ動かす）
-        deltas = [sub(move(p), p) for p in st.round]
-        st.round = [add(p, d) for p, d in zip(st.round, deltas)]
-        st.sharp = [add(p, d) for p, d in zip(st.sharp, deltas)]
-        st.infos = [None if x is None else (move(x[0]), x[1], move(x[2]), x[3], x[4]) for x in st.infos]
-        st.sharp_points = {move(p) for p in st.sharp_points}
+        kind = "cyc" if st.cyc else "open"
+        # 丸め版と角版の点は、それぞれ自分の位置で動かす量を決める
+        # （角版で1つの角に集めた点が、同じだけ動いて集まったままになるように）
+        st.round = [move(p, kind) for p in st.round]
+        st.sharp = [move(p, kind) for p in st.sharp]
+        st.infos = [None if x is None else (move(x[0], kind), x[1], move(x[2], kind), x[3], x[4]) for x in st.infos]
+        st.sharp_points = {move(p, kind) for p in st.sharp_points}
     new["dots"] = [move(p) for p in new["dots"]]
     new["fills"] = [[move(p) for p in poly] for poly in new["fills"]]
     new["extra_corners"] = [move(p) for p in new["extra_corners"]]
