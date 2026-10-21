@@ -8,6 +8,7 @@
 #   dist/static/*.ttf             静的フォント 36 個
 #   dist/OCRAAxis-<版>.zip        上の2つと LICENSE・README.md・preview.png をまとめたもの
 #   preview.png                   README 用の見本画像
+#   social.png                    GitHub のソーシャルプレビュー（Settings → Social preview で設定する）
 set -e
 cd "$(dirname "$0")"
 PY=.venv/bin/python
@@ -26,7 +27,7 @@ NAME="OCRAAxis-$VERSION"
 rm -rf dist/static "dist/$NAME" "dist/$NAME.zip"
 "$PY" -I build_ocra.py skeleton-round.txt dist
 "$PY" -I make_release.py dist/OCRAAxis-VF.ttf dist/static
-"$PY" -I make_preview.py dist/OCRAAxis-VF.ttf preview.png
+"$PY" -I make_preview.py dist/OCRAAxis-VF.ttf preview.png --social social.png
 
 mkdir -p "dist/$NAME/static"
 cp dist/OCRAAxis-VF.ttf LICENSE README.md preview.png "dist/$NAME/"

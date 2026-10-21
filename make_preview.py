@@ -145,10 +145,34 @@ def render(page):
     page.y += MARGIN
 
 
+def render_social(out):
+    """GitHub のソーシャルプレビュー（1280×640）。数字を右へ行くほど太く、角張らせて、軸の変化を見せる。"""
+    w, h = 1280, 640
+    image = Image.new("RGB", (w, h), BG)
+    draw = ImageDraw.Draw(image)
+    x0 = 96
+    draw.text((x0, 210), fontinfo.FAMILY, font=font(140, 700), fill=INK, anchor="ls")
+    draw.text((x0, 272), "A variable OCR-A", font=font(34, 300), fill=MUTED, anchor="ls")
+    draw.text((x0, 318), "wght 100-900   ROND 0-100   slnt 0 to -10", font=font(34, 300), fill=MUTED, anchor="ls")
+    digits = "0123456789"
+    size = 150
+    step = (w - 2 * x0) / len(digits)
+    for i, ch in enumerate(digits):
+        t = i / (len(digits) - 1)
+        f = font(size, round(100 + 800 * t), round(100 - 100 * t))
+        draw.text((x0 + i * step, 520), ch, font=f, fill=INK, anchor="ls")
+    draw.line((x0, 566, w - x0, 566), fill=LINE, width=2)
+    draw.text((x0, 600), "Thin / Round", font=font(22, 400), fill=MUTED, anchor="ls")
+    draw.text((w - x0, 600), "Black / Sharp", font=font(22, 400), fill=MUTED, anchor="rs")
+    image.save(out, optimize=True)
+    print("wrote", out, image.size)
+
+
 def main():
     parser = argparse.ArgumentParser(description="バリアブルフォントから、README 用の見本画像を描く。")
     parser.add_argument("vf", help="バリアブルフォント（OCRAAxis-VF.ttf）")
     parser.add_argument("out", help="出力する PNG（preview.png）")
+    parser.add_argument("--social", metavar="PNG", help="GitHub のソーシャルプレビュー（1280×640）も書き出す")
     args = parser.parse_args()
     global VF_PATH
     VF_PATH = args.vf
@@ -160,6 +184,8 @@ def main():
     render(page)
     page.image.save(out, optimize=True)
     print("wrote", out, page.image.size)
+    if args.social:
+        render_social(args.social)
 
 
 if __name__ == "__main__":

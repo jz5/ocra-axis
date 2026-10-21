@@ -22,7 +22,7 @@ Files:
   ocra.fea                 (OpenType features, from the OCR package)
   source/ocr-0.3.1/        (MetaPost sources, copied unmodified from the OCR package)
   ref/OCRA.ttf             (the original OCR A font from the OCR package)
-  preview.png              (specimen image of the fonts)
+  preview.png, social.png  (specimen images of the fonts)
 
 These fonts are derived from the OCR A font in the Tsukurimashou Project's
 OCR package, version 0.3.1 (https://tsukurimashou.org/ocr.php.ja), which is
