@@ -1,0 +1,141 @@
+OCR-A Axis
+==========
+
+This repository contains two kinds of material, under different terms:
+
+  Part 1. The fonts and the font data (Richard B. Wales's terms)
+  Part 2. The build tools written for this project (MIT License)
+
+The MIT License in Part 2 does NOT apply to the fonts. Fonts produced with
+these tools are derived from the Wales definition and fall under Part 1.
+
+
+------------------------------------------------------------------------------
+Part 1. The fonts and the font data
+------------------------------------------------------------------------------
+
+Files:
+
+  the font files           (OCRAAxis-VF.ttf and static/*.ttf, distributed on
+                           GitHub Releases and built into dist/ by build.sh)
+  skeleton-round.txt       (centerlines extracted from msk-ocra.mp)
+  ocra.fea                 (OpenType features, from the OCR package)
+  source/ocr-0.3.1/        (MetaPost sources, copied unmodified from the OCR package)
+  ref/OCRA.ttf             (the original OCR A font from the OCR package)
+  preview.png              (specimen image of the fonts)
+
+These fonts are derived from the OCR A font in the Tsukurimashou Project's
+OCR package, version 0.3.1 (https://tsukurimashou.org/ocr.php.ja), which is
+Matthew Skala's MetaType1 translation of Richard B. Wales's METAFONT
+definition. The OCR A outlines in this project were rebuilt from the
+centerlines of that definition, with variable stroke width, corner
+roundness and slant.
+
+Matthew Skala's statement in msk-ocra.mp:
+
+    I, Matthew Skala, release my work on this to the public domain.  However,
+    the copyright notice below, from the METAFONT code I used as a source,
+    may be applicable.
+
+fntbase.mp is released to the public domain by Matthew Skala, as stated
+at the start of that file.
+
+The modifications made in this project (the stroke-based reconstruction,
+the weight, roundness and slant variations, and the static instances) are
+distributed under the same terms as the Wales definition, reproduced below.
+
+The original copyright notice and credit information, reproduced intact
+from msk-ocra.mp:
+
+    METAFONT-84 Definition for OCR-A Optical Character Recognition Font
+    (C) Copyright 1988, 1989 Richard B. Wales.  All Rights Reserved.
+
+    Coded by:
+
+        Richard B. Wales
+        Computer Science Department
+        University of California, Los Angeles (UCLA)
+        Los Angeles, California 90024-1596 (USA)
+        +1 (213) 825-5683
+        wales@CS.UCLA.EDU
+
+    Source of information:
+
+        ANSI Standard X3.17-1977 (approved January 20, 1977, by the
+        American National Standards Institute, Inc.)
+
+    Based on an earlier version by:
+
+        Tor Lillqvist
+        Computing Services
+        Technical Research Centre of Finland
+        TML@FINGATE.BITNET; mcvax!santra!tml
+
+    Terms of copyright:
+
+        You may do anything you wish with this font definition, as
+        long as you retain the original copyright notice and credit
+        information intact in the source, and do not charge any fee
+        for distribution of either the source or any fonts derived
+        from it beyond a reasonable copying or communications charge.
+
+    Disclaimer:
+
+        While I have made every reasonable effort to make this font
+        definition correspond to the specifications in ANSI Standard
+        X3.17-1977, I do not guarantee that it conforms fully to all
+        official requirements for the OCR-A font, nor that the char-
+        acters produced from this definition will be usable by any
+        particular OCR hardware and/or software.  It is the respon-
+        sibility of the user to determine the usability of this font
+        definition for his application.  Use of this font definition
+        is totally at the user's own risk and without any warranty
+        whatsoever, express or implied.  Neither the author nor his
+        employer will be responsible for any damages, including
+        secondary or consequential damages, arising out of the use of
+        this font definition.
+
+        The four ASCII characters "Tilde", "Underline", "Grave Accent",
+        and "Vertical Bar" do not appear as part of ANSI X3.17-1977.
+        In order to make a complete ASCII character set, I supplemented
+        the standard with my own designs for these four characters.
+        Since these characters are not part of any standard, they will
+        presumably *NOT* be readable by any existing OCR-A equipment.
+
+Additional disclaimer for OCR-A Axis: apart from the default instance
+(wght 400, ROND 100, slnt 0), the shapes intentionally depart from
+ANSI X3.17-1977 (stroke width, corners, slant, and adjustments that keep
+counters open at heavy weights). They are not intended for machine
+reading. The fonts are provided "as is", without warranty of any kind.
+
+
+------------------------------------------------------------------------------
+Part 2. The build tools
+------------------------------------------------------------------------------
+
+Files:
+
+  build.sh, build_ocra.py, fontinfo.py, make_release.py, make_preview.py,
+  make_skeleton.sh, skelhooks.mp, specimen.html, requirements.txt
+
+MIT License
+
+Copyright (c) 2026 jz5
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
