@@ -29,10 +29,11 @@ STANDARD_WIDTH = 101  # ANSI の線幅 T
 WEIGHTS = {100: 40, 400: STANDARD_WIDTH, 900: 180}  # wght → 線幅
 STYLES = {100: "Thin", 300: "Light", 400: "Regular", 700: "Bold", 900: "Black"}
 ARC_STEPS = 6  # 角の丸め（ベジェ1本）を何本の線分に割るか（粗いと内側の縁がガタつく）
-CHAMFER_GLYPHS = {"B"}  # 角版で丸めの角を直角にせず面取りする字（B が「日」にならないように）
+CHAMFER_GLYPHS = {"B"}  # 角版で丸めの角を 45° ずつの2つの角に分けて面取りにする字（B が「日」にならないように）
+CHAMFER_TURN = 45
 MAX_CORNER_TURN = 100  # 曲線の区間がこれ以上（度）回るなら、角版で角を分ける
-K_JOIN = 7  # 頂点の外側の角を表す点の数
-K_CAP = 9  # キャップを表す点の数（両側の縁の点を除く）
+K_JOIN = 13  # 頂点の外側の角を表す点の数（奇数。真ん中の点が角の先端に来る）
+K_CAP = 17  # キャップを表す点の数（両側の縁の点を除く。奇数で真ん中が端の正面）
 RING = 12  # 点（ドット）の輪郭のオンカーブ点の数
 MITER_LIMIT = 3.0  # 留め継ぎの先端がこれ以上伸びるなら面取りする
 COPYRIGHT = (
@@ -132,7 +133,20 @@ def chain_in_box(chain):
     """原点を囲む凸な形の外周の一部 chain を、ペンの正方形で切った鎖にする。"""
     poly = clip_to_pen_box([(0.0, 0.0)] + chain)
     i = poly.index((0.0, 0.0))
-    return poly[i + 1:] + poly[:i]
+    chain = poly[i + 1:] + poly[:i]
+    # 切った所に出る重複点や、一直線上の余分な点を除く
+    # （残ると角の先端が複数あるように扱われ、中間の丸みで段ができる）
+    out = [chain[0]]
+    for q in chain[1:]:
+        if math.hypot(*sub(q, out[-1])) > 1e-6:
+            out.append(q)
+    k = 1
+    while k < len(out) - 1:
+        if abs(cross(sub(out[k], out[k - 1]), sub(out[k + 1], out[k]))) < 1e-9:
+            del out[k]
+        else:
+            k += 1
+    return out
 
 
 def resample(chain, m):
@@ -147,6 +161,26 @@ def resample(chain, m):
         i = max(range(len(pts) - 1), key=lambda k: math.hypot(*sub(pts[k + 1], pts[k])))
         pts.insert(i + 1, mul(add(pts[i], pts[i + 1]), .5))
     return pts
+
+
+def collapse_to_corner(chain, fractions):
+    """丸め版の円弧上の各点（円弧の中での割合 0〜1）を、角版の角の頂点に集める。
+
+    chain は角版の外側の縁（両端は前後の縁の上の点）。その途中の頂点
+    （ふつうは留め継ぎの先端1点、切り落としがあれば2点）へ、割合に応じて割り振る。
+    丸め版とこの形を補間すると、途中はどこでも「半径が丸めの割合に比例した円弧」になる。
+    """
+    corners = chain[1:-1] or [mul(add(chain[0], chain[-1]), .5)]
+    m = len(corners)
+    out = []
+    for f in fractions:
+        x = f * m
+        k = round(x)
+        if 0 < k < m and abs(x - k) < 1e-9:
+            out.append(mul(add(corners[k - 1], corners[k]), .5))  # ちょうど境目なら中点
+        else:
+            out.append(corners[min(int(x), m - 1)])
+    return out
 
 
 def arc_chain(v0, turn, m):
@@ -210,59 +244,64 @@ def run_turn(run):
     return math.degrees(total)
 
 
-def corners_for_run(run, line_in=None, line_out=None, chamfer=False):
+def corners_for_run(run, line_in=None, line_out=None, max_turn=MAX_CORNER_TURN):
     """曲線の区間 run を角版での角の列に置き換える。
 
     区間を折れ線にした各点について (角版での位置, 区間の情報) を返す。
-    回転が大きい区間は、回転がほぼ等分になる所で分けて複数の角にする。
+    max_turn を超えて回る区間は、回転を等分する向きの線で区切って複数の角にする
+    （O の上辺なら水平な線。max_turn を小さくすると面取りになる）。
     区間の情報は (始点, 始点の接線, 終点, 終点の接線, 半径の目安)。
     line_in, line_out は区間の前後の直線の向き。あればそれを延ばして角を求める
     （曲線の接線は直線の向きとわずかにずれ、角版で直線が傾いてしまう）。
-    chamfer なら直角の角にせず、曲線の始点と終点をまっすぐ結ぶ面取りにする。
     """
-    angles = [math.atan2(*tangent_in(run[0])[::-1])]
-    for s in run:
-        a = math.atan2(*tangent_out(s)[::-1])
-        while a - angles[-1] > math.pi:
-            a -= 2 * math.pi
-        while a - angles[-1] < -math.pi:
-            a += 2 * math.pi
-        angles.append(a)
-    total = angles[-1] - angles[0]
-    pieces = max(1, math.ceil(abs(math.degrees(total)) / MAX_CORNER_TURN))
-    bounds = [0]
+    start, end = run[0][0], run[-1][3]
+    d_in = line_in if line_in is not None else tangent_in(run[0])
+    d_out = line_out if line_out is not None else tangent_out(run[-1])
+    a0 = math.atan2(d_in[1], d_in[0])
+    total = (math.atan2(d_out[1], d_out[0]) - a0 + math.pi) % (2 * math.pi) - math.pi
+    total = math.radians(run_turn(run)) if abs(run_turn(run)) > 179 else total
+    pieces = max(1, math.ceil(abs(math.degrees(total)) / max_turn - 1e-9))
+    # 折れ線の各点と、その点での接線の向き（始点からの回転の割合）
+    pts = [start]
+    fracs = [0.0]
+    for seg in run:
+        for t in range(1, ARC_STEPS + 1):
+            q = bezier(*seg, t / ARC_STEPS)
+            tan = sub(bezier(*seg, min(1, t / ARC_STEPS + 1e-4)), bezier(*seg, max(0, t / ARC_STEPS - 1e-4)))
+            a = math.atan2(tan[1], tan[0])
+            diff = (a - a0 + math.pi) % (2 * math.pi) - math.pi
+            if abs(total) > math.pi * 0.99 and diff * total < 0:
+                diff += math.copysign(2 * math.pi, total)
+            pts.append(q)
+            fracs.append(min(1.0, max(0.0, diff / total)) if total else 1.0)
+    fracs[-1] = 1.0
+    # 区切りの線: 接線がちょうど k/pieces だけ回った点を通り、その向きの線
+    lines = [(start, d_in)]
     for k in range(1, pieces):
-        target = angles[0] + total * k / pieces
-        bounds.append(min(range(1, len(run)), key=lambda i: abs(angles[i] - target)))
-    bounds.append(len(run))
+        f = k / pieces
+        j = next(j for j in range(1, len(pts)) if fracs[j] >= f)
+        t = (f - fracs[j - 1]) / (fracs[j] - fracs[j - 1]) if fracs[j] > fracs[j - 1] else 0
+        point = add(pts[j - 1], mul(sub(pts[j], pts[j - 1]), t))
+        a = a0 + total * f
+        lines.append((point, (math.cos(a), math.sin(a))))
+    lines.append((end, d_out))
+    corners = []
+    for k in range(pieces):
+        (p, d), (q, e) = lines[k], lines[k + 1]
+        corners.append(line_intersection(p, d, q, e) if abs(cross(d, e)) > math.sin(math.radians(5)) else None)
+    # 区切りごとの情報（半径の目安は弧の長さ ÷ 回転角）
+    piece_of = [min(pieces - 1, int(f * pieces)) for f in fracs]
+    infos = []
+    for k in range(pieces):
+        idx = [j for j in range(1, len(pts)) if piece_of[j] == k]
+        length = sum(math.hypot(*sub(pts[j], pts[j - 1])) for j in idx)
+        turn = abs(total) / pieces
+        infos.append((lines[k][0], lines[k][1], lines[k + 1][0], lines[k + 1][1],
+                      length / turn if turn > 1e-6 else math.inf))
     result = []
-    for a, b in zip(bounds, bounds[1:]):
-        if a >= b:
-            continue
-        sub_run = run[a:b]
-        start, end = sub_run[0][0], sub_run[-1][3]
-        d_in, d_out = tangent_in(sub_run[0]), tangent_out(sub_run[-1])
-        if a == 0 and line_in is not None:
-            d_in = line_in
-        if b == len(run) and line_out is not None:
-            d_out = line_out
-        corner = None
-        if abs(cross(d_in, d_out)) > math.sin(math.radians(5)):
-            corner = line_intersection(start, d_in, end, d_out)
-        flat_all = [start] + [bezier(*s, t / ARC_STEPS) for s in sub_run for t in range(1, ARC_STEPS + 1)]
-        length = sum(math.hypot(*sub(flat_all[i + 1], flat_all[i])) for i in range(len(flat_all) - 1))
-        turn = abs(angles[b] - angles[a])
-        info = (start, d_in, end, d_out, length / turn if turn > 1e-6 else math.inf)
-        flat = flat_all[1:]
-        if chamfer:
-            # 曲線上の各点を、弧の長さの割合で始点と終点を結ぶ直線の上に置く
-            along = 0.0
-            for k, p in enumerate(flat):
-                along += math.hypot(*sub(p, flat_all[k]))
-                result.append((add(start, mul(sub(end, start), along / length)), info))
-            continue
-        for p in flat:
-            result.append((corner if corner else p, info))
+    for j in range(1, len(pts)):
+        k = piece_of[j]
+        result.append((corners[k] if corners[k] else pts[j], infos[k]))
     return result
 
 
@@ -292,17 +331,14 @@ def polyline(segs, cyc, chamfer=False):
         while j < len(segs) and not straight[j]:
             j += 1
         run = segs[i:j]
-        if abs(run_turn(run)) > MAX_CORNER_TURN:
-            # 回転の大きい区間は角を分けられるよう、曲線を半分に割っておく
-            run = [h for seg in run for h in split_bezier(seg)]
+        max_turn = CHAMFER_TURN if chamfer else MAX_CORNER_TURN
         flat = [bezier(*s, t / ARC_STEPS) for s in run for t in range(1, ARC_STEPS + 1)]
         line_in = unit(sub(segs[i - 1][3], segs[i - 1][0])) if (i > 0 or cyc) and straight[i - 1] else None
         line_out = unit(sub(segs[j % len(segs)][3], segs[j % len(segs)][0])) \
             if (j < len(segs) or cyc) and straight[j % len(segs)] else None
-        targets = corners_for_run(run, line_in, line_out, chamfer)
-        if (i > 0 or cyc) and not chamfer:
-            pts_sharp[-1] = targets[0][0]  # 曲線の始点も最初の角へ（線の端点や面取りなら動かさない）
+        targets = corners_for_run(run, line_in, line_out, max_turn)
         if i > 0 or cyc:
+            pts_sharp[-1] = targets[0][0]  # 曲線の始点も最初の角へ（線の端点なら動かさない）
             infos[-1] = targets[0][1]
         if j == len(segs) and not cyc:
             targets[-1] = (flat[-1], targets[-1][1])  # 線の端点は動かさない
@@ -396,7 +432,7 @@ class Stroke:
         turn = math.atan2(cross(d_in, d_out), c)
         s = -1 if turn > 0 else 1  # 外側の縁（左に曲がるなら右側）
         if sharp_mode or self.round[i] in self.sharp_points:
-            outer = resample(self.sharp_chain(d_in, d_out, s), K_JOIN)
+            outer = collapse_to_corner(self.sharp_chain(d_in, d_out, s), [k / (K_JOIN - 1) for k in range(K_JOIN)])
         else:
             outer = arc_chain(mul(n_in, s), turn, K_JOIN)
         outer = [add(v, mul(p, h)) for p in outer]
@@ -436,8 +472,8 @@ class Stroke:
     def map_group(self, g, h, sides):
         """角版で1か所に集めた頂点のまとまりの外側の縁を、丸め版の円弧の向きに合わせて並べ直す。
 
-        丸め版の円弧上の各点を、その向きの割合に応じて角版の留め継ぎの上に置く。
-        こうすると中間の丸みでも、丸い角が少しずつ角張っていく形になる。
+        丸め版の円弧上の各点を、その向きの割合に応じて角版の角の頂点に集める
+        （collapse_to_corner）。中間の丸みでは、角の丸みの半径だけが小さくなっていく。
         """
         v = self.sharp[g[0]]
         d_in, d_out = self.directions(g[0], True)
@@ -448,7 +484,7 @@ class Stroke:
         s = -1 if total > 0 else 1
         chain = [add(v, mul(p, h)) for p in self.sharp_chain(d_in, d_out, s)]
         base = math.atan2(*mul(normal(d_in), s)[::-1])
-        # 丸め版の各点の向き → 割合
+        # 丸め版の各点の向き → 円弧の中での割合
         fractions = []
         for i in g:
             ri, ro = self.directions(i, False)
@@ -459,28 +495,7 @@ class Stroke:
                 a = a0 + rturn * k / (K_JOIN - 1)
                 diff = (a - base + math.pi) % (2 * math.pi) - math.pi
                 fractions.append(min(1.0, max(0.0, diff / total)))
-        # 鎖の上で割合の位置にある点
-        lengths = [0.0]
-        for a, b in zip(chain, chain[1:]):
-            lengths.append(lengths[-1] + math.hypot(*sub(b, a)))
-        total_len = lengths[-1] or 1.0
-
-        def at(f):
-            target = f * total_len
-            for j in range(len(chain) - 1):
-                if lengths[j + 1] >= target or j == len(chain) - 2:
-                    seg = lengths[j + 1] - lengths[j]
-                    t = 0 if seg == 0 else (target - lengths[j]) / seg
-                    return add(chain[j], mul(sub(chain[j + 1], chain[j]), min(1, max(0, t))))
-
-        pts = [at(f) for f in fractions]
-        # 角の頂点は、割合が最も近い点をそこへ合わせて正確に角を出す
-        used = set()
-        for j in range(1, len(chain) - 1):
-            f = lengths[j] / total_len
-            k = min((k for k in range(len(pts)) if k not in used), key=lambda k: abs(fractions[k] - f))
-            pts[k] = chain[j]
-            used.add(k)
+        pts = collapse_to_corner(chain, fractions)
         side = 0 if s > 0 else 1  # 外側が左なら左の列、右なら右の列を置き換える
         for idx, i in enumerate(g):
             l, r, inner = sides[i]
@@ -586,7 +601,8 @@ class Stroke:
         n = normal(d)
         flagged = self.round[i] in self.sharp_points
         if sharp_mode and i in self.butt:
-            chain = resample([n, mul(n, -1)], K_CAP + 2)
+            e = mul(d, 0.05)
+            chain = self.square_cap([n, add(n, e), add(mul(n, -1), e), mul(n, -1)])
         elif sharp_mode or flagged:
             # 線に直角な長方形の端。斜めの線では延ばす長さを縮め、線の主な向き
             # （横に近い線なら横、縦に近い線なら縦）で、長方形の角が丸い端と同じ所
@@ -595,10 +611,24 @@ class Stroke:
             a = 0 if abs(d[0]) >= abs(d[1]) else 1
             reach = min(1.0, (1 - abs(n[a])) / abs(d[a]))
             e = mul(d, reach)
-            chain = resample([n, add(n, e), add(mul(n, -1), e), mul(n, -1)], K_CAP + 2)
+            chain = self.square_cap([n, add(n, e), add(mul(n, -1), e), mul(n, -1)])
         else:
             chain = arc_chain(n, -math.pi, K_CAP + 2)
         return [add(v, mul(p, h)) for p in chain[1:-1]]
+
+    @staticmethod
+    def square_cap(rect):
+        """四角い端の点。丸い端（半円）の点と向きで対応させる。
+
+        半円の 90° より手前の点は手前の角へ、先の点は先の角へ、ちょうど 90° の点は
+        前の辺の中点へ集める。補間の途中は角丸の長方形になり、線の軸に対して左右対称になる。
+        """
+        n_pt, c1, c2, m_pt = rect
+        pts = [n_pt]
+        for k in range(1, K_CAP + 1):
+            angle = 180 * k / (K_CAP + 1)
+            pts.append(c1 if angle < 90 - 1e-9 else c2 if angle > 90 + 1e-9 else mul(add(c1, c2), .5))
+        return pts + [m_pt]
 
     def contours(self, h, sharp_mode):
         pts, n = (self.sharp if sharp_mode else self.round), self.n
